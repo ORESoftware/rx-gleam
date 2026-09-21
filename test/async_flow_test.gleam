@@ -10,10 +10,17 @@ pub type SourceCommand {
   Emit(Int)
   Finish
   FailSource(String)
+  CancelSource
+}
+
+pub type WorkerCommand {
+  Resolve(Result(Int, String))
+  CancelWorker
 }
 
 pub type WorkerEvent {
-  WorkerStarted(Int, process.Subject(Result(Int, String)))
+  WorkerStarted(Int, process.Subject(WorkerCommand))
+  WorkerCancelled(Int)
 }
 
 pub type OutputEvent {
@@ -53,17 +60,17 @@ pub fn concat_map_accepts_async_input_while_work_is_running_test() {
   // concat_map has exactly one active projected Future.
   let assert Error(Nil) = process.receive(from: workers, within: 20)
 
-  process.send(gate1, Ok(10))
+  process.send(gate1, Resolve(Ok(10)))
   let assert Ok(WorkerStarted(2, gate2)) =
     process.receive(from: workers, within: 1000)
   receive_output(outputs) |> should.equal(Value(10))
 
-  process.send(gate2, Ok(20))
+  process.send(gate2, Resolve(Ok(20)))
   let assert Ok(WorkerStarted(3, gate3)) =
     process.receive(from: workers, within: 1000)
   receive_output(outputs) |> should.equal(Value(20))
 
-  process.send(gate3, Ok(30))
+  process.send(gate3, Resolve(Ok(30)))
   receive_output(outputs) |> should.equal(Value(30))
   receive_output(outputs) |> should.equal(Completed)
 
@@ -100,15 +107,15 @@ pub fn merge_map_bounds_concurrency_and_emits_completion_order_test() {
   let assert Error(Nil) = process.receive(from: workers, within: 20)
 
   // Completing #2 frees one slot, so queued #3 begins before #1 is done.
-  process.send(gate2, Ok(20))
+  process.send(gate2, Resolve(Ok(20)))
   let assert Ok(WorkerStarted(3, gate3)) =
     process.receive(from: workers, within: 1000)
   receive_output(outputs) |> should.equal(Value(20))
 
-  process.send(gate1, Ok(10))
+  process.send(gate1, Resolve(Ok(10)))
   receive_output(outputs) |> should.equal(Value(10))
 
-  process.send(gate3, Ok(30))
+  process.send(gate3, Resolve(Ok(30)))
   receive_output(outputs) |> should.equal(Value(30))
   receive_output(outputs) |> should.equal(Completed)
 
@@ -143,10 +150,10 @@ pub fn ordered_async_map_processes_concurrently_but_emits_fifo_test() {
     process.receive(from: workers, within: 1000)
 
   // #2 finishes first but cannot pass #1 in InputOrder mode.
-  process.send(gate2, Ok(20))
+  process.send(gate2, Resolve(Ok(20)))
   let assert Error(Nil) = process.receive(from: outputs, within: 20)
 
-  process.send(gate1, Ok(10))
+  process.send(gate1, Resolve(Ok(10)))
   receive_output(outputs) |> should.equal(Value(10))
   receive_output(outputs) |> should.equal(Value(20))
   receive_output(outputs) |> should.equal(Completed)
@@ -181,12 +188,15 @@ pub fn projected_error_is_fail_fast_and_late_success_is_ignored_test() {
   let assert Ok(WorkerStarted(2, gate2)) =
     process.receive(from: workers, within: 1000)
 
-  process.send(gate2, Error("boom"))
+  process.send(gate2, Resolve(Error("boom")))
   receive_output(outputs) |> should.equal(Failed("boom"))
 
-  // The flow is gone after failure. A late completion cannot produce output,
-  // and queued #3 must never start.
-  process.send(gate1, Ok(10))
+  // Failure physically cancels the other active worker and drops queued #3.
+  let assert Ok(WorkerCancelled(1)) =
+    process.receive(from: workers, within: 1000)
+
+  // A completion sent after cancellation cannot produce downstream output.
+  process.send(gate1, Resolve(Ok(10)))
   let assert Error(Nil) = process.receive(from: outputs, within: 20)
   let assert Error(Nil) = process.receive(from: workers, within: 20)
 
@@ -198,13 +208,13 @@ fn controlled_async_source(
   ready: process.Subject(process.Subject(SourceCommand)),
 ) -> rx.Observable(Int, String) {
   rx.create(fn(emitter) {
-    let pid = process.spawn(fn() {
-      let commands = process.new_subject()
+    let commands = process.new_subject()
+    let _pid = process.spawn(fn() {
       process.send(ready, commands)
       source_loop(commands, emitter)
     })
 
-    fn() { process.kill(pid) }
+    fn() { process.send(commands, CancelSource) }
   })
 }
 
@@ -220,6 +230,7 @@ fn source_loop(
     }
     Ok(Finish) -> rx.complete(emitter)
     Ok(FailSource(reason)) -> rx.error(emitter, reason)
+    Ok(CancelSource) -> Nil
   }
 }
 
@@ -228,17 +239,18 @@ fn controlled_future(
   workers: process.Subject(WorkerEvent),
 ) -> future.Future(Int, String) {
   future.new(fn(resolve) {
-    let pid = process.spawn(fn() {
-      let gate = process.new_subject()
+    let gate = process.new_subject()
+    let _pid = process.spawn(fn() {
       process.send(workers, WorkerStarted(value, gate))
 
       case process.receive(from: gate, within: 5000) {
-        Ok(result) -> resolve(result)
+        Ok(Resolve(result)) -> resolve(result)
+        Ok(CancelWorker) -> process.send(workers, WorkerCancelled(value))
         Error(Nil) -> resolve(Error("worker gate timeout"))
       }
     })
 
-    fn() { process.kill(pid) }
+    fn() { process.send(gate, CancelWorker) }
   })
 }
 
