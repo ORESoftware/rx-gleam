@@ -243,7 +243,10 @@ fn flat_map_list(
   }
 }
 
-fn prepend_to_reversed(values: List(value), reversed: List(value)) -> List(value) {
+fn prepend_to_reversed(
+  values: List(value),
+  reversed: List(value),
+) -> List(value) {
   case values {
     [] -> reversed
     [first, ..rest] -> prepend_to_reversed(rest, [first, ..reversed])
