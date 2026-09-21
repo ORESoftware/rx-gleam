@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [erlang, javascript]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Gleam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          gleam-version: "1.18.0"
+          rebar3-version: "3"
+
+      - name: Download dependencies
+        run: gleam deps download
+
+      - name: Check formatting
+        run: gleam format --check src test
+
+      - name: Test ${{ matrix.target }} target
+        run: gleam test --target ${{ matrix.target }}
