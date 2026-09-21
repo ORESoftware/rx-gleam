@@ -10,15 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Detect Gleam package
+      - name: Detect Gleam package source tree
         id: package
         shell: bash
         run: |
-          if test -f gleam.toml; then
+          if test -f gleam.toml && test -d src && test -d test; then
             echo 'present=true' >> "$GITHUB_OUTPUT"
           else
             echo 'present=false' >> "$GITHUB_OUTPUT"
-            echo 'Bootstrap main has no Gleam package yet; package checks are exercised on the feature PR.'
+            echo 'Package source tree is not on this ref yet; compiler checks are skipped.'
           fi
       - uses: erlef/setup-beam@v1
         if: steps.package.outputs.present == 'true'
