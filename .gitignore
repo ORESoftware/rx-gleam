@@ -1,0 +1,14 @@
+# Gleam build output
+build/
+erl_crash.dump
+*.beam
+*.ez
+
+# zed-pkg local install/cache output
+.vendor/.zed/
+zed_modules/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.swo
