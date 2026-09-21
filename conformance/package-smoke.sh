@@ -7,6 +7,7 @@ cd "$root"
 for required in \
   .zpkg.toml \
   gleam.toml \
+  manifest.toml \
   src/rx.gleam \
   src/rx/runtime.gleam \
   src/rx/protocol.gleam \
@@ -34,6 +35,10 @@ grep -q 'pub fn merge_map' src/rx/flow.gleam
 grep -q 'pub fn map_ordered' src/rx/flow.gleam
 grep -q 'pub fn filter_async_concurrent' src/rx/flow.gleam
 grep -q '^# rx-gleam server-side use cases$' docs/USE_CASES.md
+
+grep -q 'name = "gleam_erlang"' manifest.toml
+grep -q 'name = "gleam_otp"' manifest.toml
+grep -q 'name = "gleam_stdlib"' manifest.toml
 
 use_case_count=$(grep -Ec '^## [0-9]+\. ' docs/USE_CASES.md)
 [ "$use_case_count" = "20" ] || {
