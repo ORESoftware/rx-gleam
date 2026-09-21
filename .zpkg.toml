@@ -22,17 +22,12 @@ dir = "."
 name = "rx_gleam"
 adapter = "none"
 
-[scripts]
-format = "gleam format --check src test"
-test = "gleam test"
-conformance = "sh ./conformance/check.sh --full"
-check = "gleam format --check src test && gleam test && sh ./conformance/check.sh --full"
-
 [hooks]
-post_install = "sh ./conformance/check.sh --quick"
-pre_publish = "sh ./conformance/check.sh --full"
+pre-install = ["sh ./scripts/zed-pre-install.sh"]
+post-install = ["sh ./scripts/zed-post-install.sh"]
 
 [publish]
 include_readme = true
 tag_format = "v{version}"
+smoke_test = "sh ./conformance/package-smoke.sh"
 exclude = ["build/**", ".vendor/.zed/**", "zed_modules/**", ".git/**", "**/*.log", ".DS_Store"]
