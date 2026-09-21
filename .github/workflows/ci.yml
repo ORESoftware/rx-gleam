@@ -52,10 +52,8 @@ jobs:
           test -f manifest.toml
           gleam deps download
           git diff --exit-code -- manifest.toml
-      - name: Show eager canonical formatter diff
-        run: |
-          gleam format src/rx/eager.gleam
-          git diff --exit-code -- src/rx/eager.gleam
+      - name: Verify canonical Gleam formatting
+        run: gleam format --check src test
       - name: Check and test latest toolchain
         run: |
           gleam check
