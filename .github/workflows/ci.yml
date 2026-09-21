@@ -2,37 +2,43 @@ name: ci
 
 on:
   push:
+  pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  normalize:
-    if: github.ref == 'refs/heads/audit/harden-rx-gleam'
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [erlang, javascript]
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Gleam
+      - name: Set up latest Gleam and OTP
         uses: erlef/setup-beam@v1
         with:
           otp-version: "29.1"
           gleam-version: "1.18.1"
           rebar3-version: "3"
 
-      - name: Normalize Gleam source and tests
-        run: |
-          gleam format src test
-          git diff --check
+      - name: Download dependencies
+        run: gleam deps download
 
-      - name: Commit formatter output
-        run: |
-          if git diff --quiet -- src test; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src test
-          git commit -m "style: normalize hardening sources"
-          git push
+      - name: Check formatting
+        run: gleam format --check src test
+
+      - name: Check ${{ matrix.target }} target
+        run: gleam check --target ${{ matrix.target }}
+
+      - name: Build ${{ matrix.target }} target with warnings as errors
+        run: gleam build --target ${{ matrix.target }} --warnings-as-errors
+
+      - name: Test ${{ matrix.target }} target
+        run: gleam test --target ${{ matrix.target }}
+
+      - name: Build documentation for ${{ matrix.target }} target
+        run: gleam docs build --target ${{ matrix.target }}
