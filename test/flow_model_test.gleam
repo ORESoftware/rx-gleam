@@ -27,6 +27,8 @@ pub fn concat_reference_model_is_fifo_test() {
   let #(state7, commands7) = model.transition(state6, model.CompleteSuccess(2))
   commands7 |> should.equal([model.Emit(2), model.Drain])
   state7.status |> should.equal(model.Drained)
+  state7.emitted |> should.equal([0, 1, 2])
+  model.invariants_hold(state7) |> should.equal(True)
 }
 
 pub fn concurrent_completion_order_model_emits_ready_result_test() {
@@ -38,6 +40,25 @@ pub fn concurrent_completion_order_model_emits_ready_result_test() {
   let #(state4, commands) = model.transition(state3, model.CompleteSuccess(1))
   commands |> should.equal([model.Emit(1), model.Start(2)])
   state4.active |> should.equal([2, 0])
+  state4.emitted |> should.equal([1])
+  model.invariants_hold(state4) |> should.equal(True)
+}
+
+pub fn completion_order_records_each_accepted_item_exactly_once_test() {
+  let state0 = model.new(2, model.CompletionOrder)
+  let #(state1, _) = model.transition(state0, model.Enqueue)
+  let #(state2, _) = model.transition(state1, model.Enqueue)
+  let #(state3, _) = model.transition(state2, model.Enqueue)
+  let #(state4, _) = model.transition(state3, model.FinishInput)
+  let #(state5, commands5) = model.transition(state4, model.CompleteSuccess(1))
+  commands5 |> should.equal([model.Emit(1), model.Start(2)])
+  let #(state6, commands6) = model.transition(state5, model.CompleteSuccess(2))
+  commands6 |> should.equal([model.Emit(2)])
+  let #(state7, commands7) = model.transition(state6, model.CompleteSuccess(0))
+  commands7 |> should.equal([model.Emit(0), model.Drain])
+  state7.emitted |> should.equal([1, 2, 0])
+  state7.status |> should.equal(model.Drained)
+  model.invariants_hold(state7) |> should.equal(True)
 }
 
 pub fn concurrent_input_order_model_buffers_early_completion_test() {
@@ -48,11 +69,14 @@ pub fn concurrent_input_order_model_buffers_early_completion_test() {
   let #(state3, commands3) = model.transition(state2, model.CompleteSuccess(1))
   commands3 |> should.equal([])
   state3.completed |> should.equal([1])
+  state3.emitted |> should.equal([])
 
   let #(state4, commands4) = model.transition(state3, model.CompleteSuccess(0))
   commands4 |> should.equal([model.Emit(0), model.Emit(1)])
   state4.completed |> should.equal([])
   state4.next_emit |> should.equal(2)
+  state4.emitted |> should.equal([0, 1])
+  model.invariants_hold(state4) |> should.equal(True)
 }
 
 pub fn failure_is_absorbing_and_cancels_other_active_work_test() {
@@ -69,6 +93,23 @@ pub fn failure_is_absorbing_and_cancels_other_active_work_test() {
     model.transition(failed, model.CompleteSuccess(0))
   still_failed |> should.equal(failed)
   late_commands |> should.equal([])
+}
+
+pub fn failure_preserves_only_already_emitted_history_test() {
+  let state0 = model.new(2, model.CompletionOrder)
+  let #(state1, _) = model.transition(state0, model.Enqueue)
+  let #(state2, _) = model.transition(state1, model.Enqueue)
+  let #(state3, _) = model.transition(state2, model.Enqueue)
+  let #(state4, _) = model.transition(state3, model.CompleteSuccess(1))
+  state4.emitted |> should.equal([1])
+
+  let #(failed, commands) = model.transition(state4, model.CompleteFailure(0))
+  commands |> should.equal([model.Fail, model.CancelActive(2)])
+  failed.emitted |> should.equal([1])
+  failed.pending |> should.equal([])
+  failed.active |> should.equal([])
+  failed.completed |> should.equal([])
+  model.invariants_hold(failed) |> should.equal(True)
 }
 
 pub fn exhaustively_preserves_invariants_concurrency_one_test() {
@@ -113,6 +154,7 @@ fn alphabet() -> List(model.Event) {
     model.CompleteSuccess(0),
     model.CompleteSuccess(1),
     model.CompleteFailure(0),
+    model.CompleteFailure(1),
     model.FinishInput,
     model.Cancel,
   ]
