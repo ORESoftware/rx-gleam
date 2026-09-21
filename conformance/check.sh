@@ -31,9 +31,9 @@ do
 done
 
 # Public protocol constructors must stay exhaustive and explicit.
-grep -q 'Terminated, Complete' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
-grep -q 'Terminated, Error' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
-grep -q 'Terminated, Next' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
+grep -q 'Terminated, CompleteKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
+grep -q 'Terminated, ErrorKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
+grep -q 'Terminated, NextKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
 
 # The runtime must remain one serialized actor, not spawn per operator.
 actor_count=$(grep -R 'actor\.new' src --include='*.gleam' | wc -l | tr -d ' ')
