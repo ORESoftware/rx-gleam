@@ -1,12 +1,17 @@
 name = "rx_gleam"
 version = "0.1.0"
-description = "Serialized single-actor Reactive Extensions for Gleam"
+description = "Composable eager and lazy reactive streams for Gleam with a serialized single-actor async runtime"
 licences = ["MIT"]
-repository = { type = "github", user = "ORESoftware", repo = "rx-gleam" }
 gleam = ">= 1.15.4"
+target = "erlang"
+
+[repository]
+type = "github"
+user = "ORESoftware"
+repo = "rx-gleam"
 
 [dependencies]
-gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+gleam_stdlib = ">= 0.60.0 and < 2.0.0"
 gleam_erlang = ">= 1.3.0 and < 2.0.0"
 gleam_otp = ">= 1.3.0 and < 2.0.0"
 
