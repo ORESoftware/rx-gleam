@@ -1,4 +1,4 @@
-import rx/protocol.{type Notification, Complete, Error, Next}
+import rx/protocol.{type Notification}
 import rx/runtime.{type Runtime, type RuntimeError}
 
 pub type Observer(value, error) {
@@ -112,15 +112,15 @@ pub fn emit(
 }
 
 pub fn next(emitter: Emitter(value, error), value: value) -> Nil {
-  emit(emitter, Next(value))
+  emit(emitter, protocol.Next(value))
 }
 
 pub fn error(emitter: Emitter(value, error), reason: error) -> Nil {
-  emit(emitter, Error(reason))
+  emit(emitter, protocol.Error(reason))
 }
 
 pub fn complete(emitter: Emitter(value, error)) -> Nil {
-  emit(emitter, Complete)
+  emit(emitter, protocol.Complete)
 }
 
 pub fn of(value: value) -> Observable(value, error) {
@@ -213,8 +213,8 @@ fn notify(
   notification: Notification(value, error),
 ) -> Nil {
   case notification {
-    Next(value) -> observer_.on_next(value)
-    Error(reason) -> observer_.on_error(reason)
-    Complete -> observer_.on_complete()
+    protocol.Next(value) -> observer_.on_next(value)
+    protocol.Error(reason) -> observer_.on_error(reason)
+    protocol.Complete -> observer_.on_complete()
   }
 }
