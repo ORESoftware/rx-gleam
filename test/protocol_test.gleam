@@ -9,30 +9,38 @@ pub fn main() -> Nil {
 
 pub fn valid_open_sequences_test() {
   protocol_expect([
-    protocol.Next(1),
-    protocol.Next(2),
-    protocol.Next(3),
+    protocol.OnNext(1),
+    protocol.OnNext(2),
+    protocol.OnNext(3),
   ])
   |> should.equal(Ok(protocol.Open))
 }
 
 pub fn valid_complete_sequence_test() {
-  protocol_expect([protocol.Next(1), protocol.Next(2), protocol.Complete])
+  protocol_expect([
+    protocol.OnNext(1),
+    protocol.OnNext(2),
+    protocol.OnComplete,
+  ])
   |> should.equal(Ok(protocol.Terminated))
 }
 
 pub fn valid_error_sequence_test() {
-  protocol_expect([protocol.Next(1), protocol.Error("boom")])
+  protocol_expect([protocol.OnNext(1), protocol.OnError("boom")])
   |> should.equal(Ok(protocol.Terminated))
 }
 
 pub fn next_after_complete_is_rejected_test() {
-  protocol_expect([protocol.Next(1), protocol.Complete, protocol.Next(2)])
+  protocol_expect([
+    protocol.OnNext(1),
+    protocol.OnComplete,
+    protocol.OnNext(2),
+  ])
   |> should.equal(Error(protocol.NotificationAfterTermination))
 }
 
 pub fn complete_after_error_is_rejected_test() {
-  protocol_expect([protocol.Error("boom"), protocol.Complete])
+  protocol_expect([protocol.OnError("boom"), protocol.OnComplete])
   |> should.equal(Error(protocol.DuplicateTermination))
 }
 
@@ -46,7 +54,7 @@ fn protocol_expect(sequence: List(Notification(Int, String))) {
 }
 
 fn alphabet() -> List(Notification(Int, String)) {
-  [protocol.Next(1), protocol.Error("error"), protocol.Complete]
+  [protocol.OnNext(1), protocol.OnError("error"), protocol.OnComplete]
 }
 
 fn all_sequences(max_length: Int) -> List(List(Notification(Int, String))) {
@@ -116,15 +124,15 @@ fn reference_from(
       case phase {
         protocol.Open ->
           case item {
-            protocol.Next(_) -> reference_from(protocol.Open, rest)
-            protocol.Error(_) -> reference_from(protocol.Terminated, rest)
-            protocol.Complete -> reference_from(protocol.Terminated, rest)
+            protocol.OnNext(_) -> reference_from(protocol.Open, rest)
+            protocol.OnError(_) -> reference_from(protocol.Terminated, rest)
+            protocol.OnComplete -> reference_from(protocol.Terminated, rest)
           }
         protocol.Terminated ->
           case item {
-            protocol.Next(_) -> Error(protocol.NotificationAfterTermination)
-            protocol.Error(_) -> Error(protocol.DuplicateTermination)
-            protocol.Complete -> Error(protocol.DuplicateTermination)
+            protocol.OnNext(_) -> Error(protocol.NotificationAfterTermination)
+            protocol.OnError(_) -> Error(protocol.DuplicateTermination)
+            protocol.OnComplete -> Error(protocol.DuplicateTermination)
           }
       }
   }
