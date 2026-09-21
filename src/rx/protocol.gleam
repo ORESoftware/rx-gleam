@@ -1,9 +1,7 @@
-import gleam/result
-
 pub type Notification(value, error) {
-  Next(value)
-  Error(error)
-  Complete
+  OnNext(value)
+  OnError(error)
+  OnComplete
 }
 
 pub type Kind {
@@ -24,9 +22,9 @@ pub type ProtocolError {
 
 pub fn kind(notification: Notification(value, error)) -> Kind {
   case notification {
-    Next(_) -> NextKind
-    Error(_) -> ErrorKind
-    Complete -> CompleteKind
+    OnNext(_) -> NextKind
+    OnError(_) -> ErrorKind
+    OnComplete -> CompleteKind
   }
 }
 
@@ -38,9 +36,9 @@ pub fn transition(
     Open, NextKind -> Ok(Open)
     Open, ErrorKind -> Ok(Terminated)
     Open, CompleteKind -> Ok(Terminated)
-    Terminated, NextKind -> result.Error(NotificationAfterTermination)
-    Terminated, ErrorKind -> result.Error(DuplicateTermination)
-    Terminated, CompleteKind -> result.Error(DuplicateTermination)
+    Terminated, NextKind -> Error(NotificationAfterTermination)
+    Terminated, ErrorKind -> Error(DuplicateTermination)
+    Terminated, CompleteKind -> Error(DuplicateTermination)
   }
 }
 
@@ -59,7 +57,7 @@ fn validate_from(
     [first, ..rest] ->
       case transition(phase, kind(first)) {
         Ok(next) -> validate_from(next, rest)
-        result.Error(error) -> result.Error(error)
+        Error(error) -> Error(error)
       }
   }
 }
