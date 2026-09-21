@@ -178,10 +178,7 @@ pub fn projected_error_is_fail_fast_and_late_success_is_ignored_test() {
 fn receive_worker_pair(
   workers: process.Subject(WorkerEvent),
 ) -> Result(
-  #(
-    process.Subject(Result(Int, String)),
-    process.Subject(Result(Int, String)),
-  ),
+  #(process.Subject(Result(Int, String)), process.Subject(Result(Int, String))),
   Nil,
 ) {
   case
