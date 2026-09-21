@@ -18,17 +18,21 @@ esac
 command -v gleam >/dev/null 2>&1 || fail "gleam is required"
 
 gleam format --check src test
+gleam build --warnings-as-errors
 gleam test
 
 for required in \
+  .gitignore \
   LICENSE \
   gleam.toml \
   manifest.toml \
   .zpkg.toml \
+  AGENTS.md \
   src/rx.gleam \
   src/rx/eager.gleam \
   src/rx/runtime.gleam \
   src/rx/protocol.gleam \
+  src/rx/lifecycle.gleam \
   src/rx/effect.gleam \
   src/rx/future.gleam \
   src/rx/flow.gleam \
@@ -40,18 +44,49 @@ for required in \
   test/runtime_shutdown_test.gleam \
   formal/RxProtocol.tla \
   formal/RxProtocol.cfg \
+  formal/RxLifecycle.tla \
+  formal/RxLifecycle.cfg \
   formal/RxAsyncFlow.tla \
   formal/RxAsyncFlowOrdered.cfg \
   formal/RxAsyncFlowCompletion.cfg \
   docs/FORMAL_METHODS.md \
   docs/COOKBOOK.md \
   docs/USE_CASES.md \
-  docs/FULL_STACK_BROWSER.md
+  docs/FULL_STACK_BROWSER.md \
+  conformance/consumer-smoke.sh \
+  .githooks/pre-commit \
+  .githooks/pre-push
 do
   [ -f "$required" ] || fail "missing required file: $required"
 done
 
+# Release metadata and generated output hygiene.
 grep -q '^MIT License$' LICENSE || fail "LICENSE is not the declared MIT license"
+grep -q '^target = "erlang"$' gleam.toml || fail "current package must explicitly target Erlang"
+grep -q '^build/$' .gitignore || fail "build output must be ignored"
+grep -q '^\.vendor/\.zed/$' .gitignore || fail "zed local install output must be ignored"
+
+gleam_version=$(awk -F' *= *' '$1 == "version" {gsub(/"/, "", $2); print $2; exit}' gleam.toml)
+zpkg_version=$(awk -F' *= *' '$1 == "version" {gsub(/"/, "", $2); print $2; exit}' .zpkg.toml)
+[ -n "$gleam_version" ] || fail "could not read gleam.toml version"
+[ "$gleam_version" = "$zpkg_version" ] || fail "gleam.toml and .zpkg.toml versions differ"
+
+# Shell hooks/gates must at least parse under POSIX sh.
+for script in \
+  conformance/check.sh \
+  conformance/package-smoke.sh \
+  conformance/consumer-smoke.sh \
+  scripts/zed-pre-install.sh \
+  scripts/zed-post-install.sh \
+  .githooks/pre-commit \
+  .githooks/pre-push
+do
+  sh -n "$script" || fail "invalid shell syntax: $script"
+done
+
+# GitHub Actions are supply-chain pinned to full commit SHAs.
+unpinned_actions=$(grep -R -h '^[[:space:]]*- uses:' .github/workflows --include='*.yml' --include='*.yaml' | grep -Ev '@[0-9a-f]{40}[[:space:]]*$' || true)
+[ -z "$unpinned_actions" ] || fail "unpinned GitHub Action reference(s): $unpinned_actions"
 
 # Public protocol constructors must stay exhaustive and explicit.
 grep -q 'Terminated, CompleteKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
@@ -103,13 +138,15 @@ grep -q 'gleam check --target javascript' docs/FULL_STACK_BROWSER.md || fail "fu
 
 if [ "$mode" = "--full" ]; then
   command -v git >/dev/null 2>&1 || fail "git is required for full conformance"
-  [ -f .githooks/pre-commit ] || fail "missing pre-commit hook"
-  [ -f .githooks/pre-push ] || fail "missing pre-push hook"
   [ -n "${TLA2TOOLS_JAR:-}" ] || fail "full conformance requires TLA2TOOLS_JAR"
   [ -f "$TLA2TOOLS_JAR" ] || fail "TLA2TOOLS_JAR does not name a file: $TLA2TOOLS_JAR"
   command -v java >/dev/null 2>&1 || fail "java is required for full conformance"
 
+  gleam docs build
+  sh ./conformance/consumer-smoke.sh
+
   java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxProtocol.cfg formal/RxProtocol.tla
+  java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxLifecycle.cfg formal/RxLifecycle.tla
   java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowOrdered.cfg formal/RxAsyncFlow.tla
   java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowCompletion.cfg formal/RxAsyncFlow.tla
 fi
