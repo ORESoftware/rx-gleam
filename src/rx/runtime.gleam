@@ -9,7 +9,7 @@ import rx/lifecycle
 import rx/protocol
 
 pub opaque type Runtime {
-  Runtime(process.Subject(Message))
+  Runtime(pid: process.Pid, subject: process.Subject(Message))
 }
 
 pub opaque type SubscriptionKey {
@@ -36,7 +36,7 @@ pub type FlowCompletion {
 }
 
 pub type RuntimeError {
-  RegistrationTimeout
+  RuntimeStopped
   InvalidConcurrency
 }
 
@@ -89,17 +89,11 @@ type State {
 }
 
 type Message {
-  Register(reference.Reference, process.Subject(Nil))
+  Register(reference.Reference)
   SetTeardown(reference.Reference, fn() -> Nil)
   Notify(reference.Reference, protocol.Kind, fn() -> Nil)
   Cancel(reference.Reference)
-  RegisterFlow(
-    reference.Reference,
-    Int,
-    FlowOrder,
-    fn() -> Nil,
-    process.Subject(Nil),
-  )
+  RegisterFlow(reference.Reference, Int, FlowOrder, fn() -> Nil)
   EnqueueFlow(reference.Reference, fn(Int) -> fn() -> Nil)
   CompleteFlow(reference.Reference, Int, FlowCompletion, fn() -> Nil)
   FinishFlowInput(reference.Reference)
@@ -119,20 +113,26 @@ pub fn start_checked(
   |> actor.on_message(handle_message)
   |> actor.start
   |> result.map(fn(started) {
-    let actor.Started(pid: _, data: subject) = started
-    Runtime(subject)
+    let actor.Started(pid:, data: subject) = started
+    Runtime(pid:, subject:)
   })
 }
 
+/// Reserve one subscription entry without blocking on the runtime actor.
+///
+/// Registration is deliberately one-way so observer callbacks can subscribe to
+/// additional streams on the same runtime without self-deadlocking. The
+/// `Register` message is sent before producer code can emit or spawn work, so
+/// subsequent messages from that subscription are ordered behind registration.
 pub fn register(runtime: Runtime) -> Result(SubscriptionKey, RuntimeError) {
-  let Runtime(subject) = runtime
-  let id = reference.new()
-  let reply_to = process.new_subject()
-  process.send(subject, Register(id, reply_to))
-
-  case process.receive(from: reply_to, within: 5000) {
-    Ok(Nil) -> Ok(SubscriptionKey(id))
-    Error(Nil) -> Error(RegistrationTimeout)
+  let Runtime(pid:, subject:) = runtime
+  case process.is_alive(pid) {
+    False -> Error(RuntimeStopped)
+    True -> {
+      let id = reference.new()
+      process.send(subject, Register(id))
+      Ok(SubscriptionKey(id))
+    }
   }
 }
 
@@ -141,7 +141,7 @@ pub fn set_teardown(
   key: SubscriptionKey,
   teardown: fn() -> Nil,
 ) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let SubscriptionKey(id) = key
   process.send(subject, SetTeardown(id, teardown))
 }
@@ -152,13 +152,13 @@ pub fn dispatch(
   kind: protocol.Kind,
   work: fn() -> Nil,
 ) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let SubscriptionKey(id) = key
   process.send(subject, Notify(id, kind, work))
 }
 
 pub fn cancel(runtime: Runtime, key: SubscriptionKey) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let SubscriptionKey(id) = key
   process.send(subject, Cancel(id))
 }
@@ -168,6 +168,10 @@ pub fn cancel(runtime: Runtime, key: SubscriptionKey) -> Nil {
 /// This does not create another actor. Queue state is stored inside the existing
 /// Runtime actor. `on_drain` runs after the input has completed and all accepted
 /// work has completed and emitted.
+///
+/// Like subscription registration, flow registration is one-way and reentrant:
+/// callbacks running on the runtime actor may construct and subscribe nested
+/// flows without waiting for the actor to reply to itself.
 pub fn register_flow(
   runtime: Runtime,
   concurrency: Int,
@@ -177,17 +181,14 @@ pub fn register_flow(
   case concurrency > 0 {
     False -> Error(InvalidConcurrency)
     True -> {
-      let Runtime(subject) = runtime
-      let id = reference.new()
-      let reply_to = process.new_subject()
-      process.send(
-        subject,
-        RegisterFlow(id, concurrency, order, on_drain, reply_to),
-      )
-
-      case process.receive(from: reply_to, within: 5000) {
-        Ok(Nil) -> Ok(FlowKey(id))
-        Error(Nil) -> Error(RegistrationTimeout)
+      let Runtime(pid:, subject:) = runtime
+      case process.is_alive(pid) {
+        False -> Error(RuntimeStopped)
+        True -> {
+          let id = reference.new()
+          process.send(subject, RegisterFlow(id, concurrency, order, on_drain))
+          Ok(FlowKey(id))
+        }
       }
     }
   }
@@ -203,7 +204,7 @@ pub fn enqueue_flow(
   key: FlowKey,
   start: fn(Int) -> fn() -> Nil,
 ) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let FlowKey(id) = key
   process.send(subject, EnqueueFlow(id, start))
 }
@@ -220,13 +221,13 @@ pub fn complete_flow(
   completion: FlowCompletion,
   deliver: fn() -> Nil,
 ) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let FlowKey(id) = key
   process.send(subject, CompleteFlow(id, sequence, completion, deliver))
 }
 
 pub fn finish_flow_input(runtime: Runtime, key: FlowKey) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let FlowKey(id) = key
   process.send(subject, FinishFlowInput(id))
 }
@@ -237,19 +238,24 @@ pub fn fail_flow_input(
   key: FlowKey,
   deliver_error: fn() -> Nil,
 ) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let FlowKey(id) = key
   process.send(subject, FailFlowInput(id, deliver_error))
 }
 
 pub fn cancel_flow(runtime: Runtime, key: FlowKey) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   let FlowKey(id) = key
   process.send(subject, CancelFlow(id))
 }
 
+/// Stop the runtime after cancelling every active subscription and flow.
+///
+/// This call is intentionally asynchronous so it is safe to invoke from an
+/// observer callback running on the runtime actor itself. Active source
+/// teardowns and Future cancellation callbacks run before the actor exits.
 pub fn stop(runtime: Runtime) -> Nil {
-  let Runtime(subject) = runtime
+  let Runtime(pid: _, subject:) = runtime
   process.send(subject, Stop)
 }
 
@@ -258,8 +264,7 @@ fn handle_message(
   message: Message,
 ) -> actor.Next(State, Message) {
   case message {
-    Register(id, reply_to) -> {
-      process.send(reply_to, Nil)
+    Register(id) ->
       actor.continue(
         State(
           ..state,
@@ -270,7 +275,6 @@ fn handle_message(
           ),
         ),
       )
-    }
 
     SetTeardown(id, incoming) -> {
       let current = dict.get(state.entries, id)
@@ -351,8 +355,7 @@ fn handle_message(
         }
       }
 
-    RegisterFlow(id, concurrency, order, on_drain, reply_to) -> {
-      process.send(reply_to, Nil)
+    RegisterFlow(id, concurrency, order, on_drain) ->
       actor.continue(
         State(
           ..state,
@@ -374,7 +377,6 @@ fn handle_message(
           ),
         ),
       )
-    }
 
     EnqueueFlow(id, start_work) ->
       case dict.get(state.flows, id) {
@@ -468,6 +470,7 @@ fn handle_message(
       }
 
     Stop -> {
+      cancel_all_entries(state.entries)
       cancel_all_flows(state.flows)
       actor.stop()
     }
@@ -575,6 +578,10 @@ fn cancel_active(active: List(ActiveWork)) -> Nil {
       cancel_active(rest)
     }
   }
+}
+
+fn cancel_all_entries(entries: Dict(reference.Reference, Entry)) -> Nil {
+  dict.each(entries, fn(_, entry) { run_optional(entry.teardown) })
 }
 
 fn cancel_all_flows(flows: Dict(reference.Reference, FlowEntry)) -> Nil {
