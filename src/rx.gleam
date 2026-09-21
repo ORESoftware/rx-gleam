@@ -112,15 +112,15 @@ pub fn emit(
 }
 
 pub fn next(emitter: Emitter(value, error), value: value) -> Nil {
-  emit(emitter, protocol.Next(value))
+  emit(emitter, protocol.OnNext(value))
 }
 
 pub fn error(emitter: Emitter(value, error), reason: error) -> Nil {
-  emit(emitter, protocol.Error(reason))
+  emit(emitter, protocol.OnError(reason))
 }
 
 pub fn complete(emitter: Emitter(value, error)) -> Nil {
-  emit(emitter, protocol.Complete)
+  emit(emitter, protocol.OnComplete)
 }
 
 pub fn of(value: value) -> Observable(value, error) {
@@ -213,8 +213,8 @@ fn notify(
   notification: Notification(value, error),
 ) -> Nil {
   case notification {
-    protocol.Next(value) -> observer_.on_next(value)
-    protocol.Error(reason) -> observer_.on_error(reason)
-    protocol.Complete -> observer_.on_complete()
+    protocol.OnNext(value) -> observer_.on_next(value)
+    protocol.OnError(reason) -> observer_.on_error(reason)
+    protocol.OnComplete -> observer_.on_complete()
   }
 }
