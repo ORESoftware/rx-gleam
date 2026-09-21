@@ -2,6 +2,7 @@
 set -eu
 
 for required in \
+  LICENSE \
   .zpkg.toml \
   gleam.toml \
   manifest.toml \
