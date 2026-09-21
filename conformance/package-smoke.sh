@@ -5,6 +5,7 @@ root="${ZED_PKG_TEST_TARGET:-$(pwd)}"
 cd "$root"
 
 for required in \
+  LICENSE \
   .zpkg.toml \
   gleam.toml \
   manifest.toml \
@@ -26,6 +27,7 @@ do
   }
 done
 
+grep -q '^MIT License$' LICENSE
 grep -q 'pub opaque type Observable' src/rx.gleam
 grep -q 'pub opaque type Runtime' src/rx/runtime.gleam
 grep -q 'pub opaque type Effect' src/rx/effect.gleam
