@@ -75,6 +75,7 @@ jobs:
         run: gleam build --target erlang --warnings-as-errors
 
       - name: Run dummy server and validate rx pipelines over HTTP
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
@@ -84,13 +85,12 @@ jobs:
 
           cleanup() {
             kill "$server_pid" 2>/dev/null || true
-            wait "$server_pid" 2>/dev/null || true
           }
           trap cleanup EXIT
 
           ready=0
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8099/health >health.txt; then
+            if curl --max-time 2 -fsS http://127.0.0.1:8099/health >health.txt; then
               ready=1
               break
             fi
@@ -107,7 +107,7 @@ jobs:
           fi
 
           test "$(cat health.txt)" = "ok"
-          test "$(curl -fsS http://127.0.0.1:8099/lazy)" = "6,8,10"
-          test "$(curl -fsS http://127.0.0.1:8099/eager)" = "6,9"
-          test "$(curl -fsS http://127.0.0.1:8099/bridge)" = "4,5"
-          test "$(curl -fsS http://127.0.0.1:8099/error)" = "mapped:boom"
+          test "$(curl --max-time 2 -fsS http://127.0.0.1:8099/lazy)" = "6,8,10"
+          test "$(curl --max-time 2 -fsS http://127.0.0.1:8099/eager)" = "6,9"
+          test "$(curl --max-time 2 -fsS http://127.0.0.1:8099/bridge)" = "4,5"
+          test "$(curl --max-time 2 -fsS http://127.0.0.1:8099/error)" = "mapped:boom"
