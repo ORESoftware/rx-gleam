@@ -22,6 +22,7 @@ gleam test
 
 for required in \
   gleam.toml \
+  manifest.toml \
   .zpkg.toml \
   src/rx.gleam \
   src/rx/runtime.gleam \
