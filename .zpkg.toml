@@ -19,7 +19,6 @@ adapter = "none"
 
 [targets.gleam]
 dir = "."
-name = "rx_gleam"
 adapter = "none"
 
 [hooks]
