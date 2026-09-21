@@ -21,15 +21,20 @@ jobs:
       - name: Set up Gleam
         uses: erlef/setup-beam@v1
         with:
-          otp-version: "29"
-          gleam-version: "1.18.0"
+          otp-version: "29.1"
+          gleam-version: "1.18.1"
           rebar3-version: "3"
 
       - name: Download dependencies
         run: gleam deps download
 
-      - name: Check formatting
-        run: gleam format --check src test
+      - name: Show formatter changes
+        run: |
+          gleam format src test
+          git diff -- src test
+
+      - name: Check ${{ matrix.target }} target
+        run: gleam check --target ${{ matrix.target }}
 
       - name: Test ${{ matrix.target }} target
         run: gleam test --target ${{ matrix.target }}
