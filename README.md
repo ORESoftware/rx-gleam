@@ -14,9 +14,12 @@ A serialized, single-actor Reactive Extensions library for Gleam.
 
 The guiding rule is: **ReactiveX defines composition; BEAM defines concurrency.**
 
+The initial implementation targets current Gleam OTP 1.x APIs (`gleam_otp` 1.3.x / `gleam_erlang` 1.3.x).
+
 ## Core API
 
 ```gleam
+import gleam/io
 import rx
 import rx/runtime
 
