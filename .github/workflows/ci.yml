@@ -32,7 +32,9 @@ jobs:
           gleam deps download
           git diff --exit-code -- manifest.toml
       - name: Compile and test declared minimum Gleam
-        run: gleam test
+        run: |
+          gleam build --warnings-as-errors
+          gleam test
 
   latest:
     name: gleam-1.18.1-otp-29.1
@@ -56,8 +58,11 @@ jobs:
         run: gleam format --check src test
       - name: Check and test latest toolchain
         run: |
+          gleam build --warnings-as-errors
           gleam check
           gleam test
+      - name: Build public API documentation
+        run: gleam docs build
 
   full:
     name: gleam-1.18-otp-28-full
@@ -79,14 +84,64 @@ jobs:
           git diff --exit-code -- manifest.toml
       - name: Verify canonical Gleam formatting
         run: gleam format --check src test
+      - name: Build with warnings as errors
+        run: gleam build --warnings-as-errors
       - name: Test
         run: gleam test
+      - name: Build public API documentation
+        run: gleam docs build
+      - name: Verify external consumer can compile public API
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/rx-gleam-consumer"
+          mkdir -p "$consumer/src"
+          cat > "$consumer/gleam.toml" <<EOF
+          name = "rx_gleam_consumer"
+          version = "0.1.0"
+          target = "erlang"
+
+          [dependencies]
+          rx_gleam = { path = "$GITHUB_WORKSPACE" }
+          EOF
+          cat > "$consumer/src/rx_gleam_consumer.gleam" <<'EOF'
+          import rx
+          import rx/eager
+          import rx/flow
+          import rx/future
+          import rx/runtime
+
+          pub fn smoke() -> Nil {
+            let _ =
+              eager.from_list([1, 2, 3])
+              |> eager.map(fn(value) { value + 1 })
+              |> eager.to_result
+
+            let assert Ok(runtime_) = runtime.start()
+            let source: rx.Observable(Int, String) =
+              rx.of(1)
+              |> flow.map_async(fn(value) { future.pure(value + 1) })
+            let assert Ok(subscription) =
+              rx.subscribe(
+                source,
+                runtime_,
+                rx.observer(fn(_) { Nil }, fn(_) { Nil }, fn() { Nil }),
+              )
+            rx.unsubscribe(subscription)
+            runtime.stop(runtime_)
+          }
+          EOF
+          cd "$consumer"
+          gleam deps download
+          gleam build --warnings-as-errors
       - name: Install checksum-pinned Zed v0.3.0
         shell: bash
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/zed.tar.gz"
-          curl --fail --silent --show-error --location --retry 3 https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz -o "$archive"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 \
+            https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz \
+            -o "$archive"
           echo "e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7  $archive" | sha256sum --check
           mkdir -p "$RUNNER_TEMP/zed-bin"
           tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
@@ -100,8 +155,10 @@ jobs:
         run: |
           set -euo pipefail
           jar="$RUNNER_TEMP/tla2tools.jar"
-          curl --fail --silent --show-error --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$jar"
-          echo "bee4a54f3ee3d4afc347c3240ec2d9e93b075104  $jar" | sha1sum --check
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
+            -o "$jar"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $jar" | sha256sum --check
           echo "TLA2TOOLS_JAR=$jar" >> "$GITHUB_ENV"
       - name: Full conformance including TLC
         run: sh conformance/check.sh --full
