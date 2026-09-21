@@ -14,7 +14,7 @@ A serialized, single-actor Reactive Extensions library for Gleam.
 
 The guiding rule is: **ReactiveX defines composition; BEAM defines concurrency.**
 
-The implementation targets current Gleam 1.15+ and Gleam OTP 1.x APIs (`gleam_otp` 1.3.x / `gleam_erlang` 1.3.x). CI is pinned to Gleam 1.18 and OTP 28.
+The package declares Gleam `>= 1.15.4`. CI verifies that floor on OTP 27 and separately runs the full Gleam 1.18 / OTP 28 conformance gate. `manifest.toml` is committed and checked for dependency-resolution drift.
 
 ## Core API
 
@@ -43,9 +43,23 @@ pub fn example() {
 }
 ```
 
-`subscribe` returns `Result(Subscription, RuntimeError)` rather than hiding runtime startup failure behind a panic. Cancellation is idempotent and subscription teardown runs at most once.
+`subscribe` returns `Result(Subscription, RuntimeError)`. A stopped runtime produces the typed `RuntimeStopped` error instead of waiting on a request/reply timeout. Cancellation is idempotent and subscription teardown runs at most once.
+
+Registration is deliberately nonblocking and reentrant: an observer callback may subscribe another Observable on the same runtime without asking the runtime actor to synchronously reply to itself.
+
+`runtime.stop(runtime)` is also nonblocking, so it is safe to request shutdown from inside an observer callback. Before the actor exits it runs stored subscription teardowns and cancels active async-flow Futures.
 
 Current primitives include `Observable(value, error)`, `Observer(value, error)`, `Subscription`, `Emitter(value, error)`, `Runtime`, `RuntimeError`, `Effect(value, error)`, `Future(value, error)`, `create`, `of`, `from_list`, `empty`, `fail`, `map`, `filter`, `tap`, cancellation, `from_future`, `concat_map`, bounded `merge_map`, ordered concurrent mapping, and async filtering.
+
+## Callback discipline
+
+The runtime actor is a **serialization boundary, not a blocking-work executor**. Observer handlers, diagnostics, Observable producer setup, Future start callbacks, and async projection functions must return promptly. They should start or register application-owned async work and report completion later.
+
+Do not call blocking `process.receive`, sleep, perform long CPU work, or run blocking I/O inside an Rx callback. If an operation can block, move it to an application-owned process/OTP component or a nonblocking callback API and expose it as a `Future`/`Effect`.
+
+The library enforces this architectural side of the contract mechanically: production `src/` may contain exactly one `actor.new`, and conformance rejects library-owned `process.spawn*` and `process.receive` calls.
+
+A `Future` producer must invoke its resolver at most once. When a Future participates in an Observable flow, duplicate or late completions are additionally suppressed by the actor-owned flow state machine.
 
 ## Protocol contract
 
@@ -61,11 +75,11 @@ The repository includes:
 
 - exhaustive generated protocol traces through length 6;
 - an independently implemented reference model used as a differential oracle;
-- runtime tests for post-terminal rejection and exactly-once teardown;
+- runtime tests for post-terminal rejection, reentrant subscription, shutdown cleanup, and exactly-once teardown;
 - TLA+ specifications under `formal/` for the notification protocol and async-flow machine;
 - explicit operator proof obligations in [`docs/FORMAL_METHODS.md`](docs/FORMAL_METHODS.md).
 
-A finite test bound is not described as a mathematical proof. TLC is the formal-model checker and the conformance script reports whether it actually ran.
+A finite test bound is not described as a mathematical proof. TLC is the formal-model checker; `--full` conformance refuses to report PASS unless TLC is configured and all models succeed.
 
 ## Async without an Rx scheduler
 
@@ -88,7 +102,7 @@ See [`docs/USE_CASES.md`](docs/USE_CASES.md) for 20 problem statements with Glea
 - rebasing heterogeneous inputs onto one canonical event stream;
 - bounded RPC fan-out, ordered enrichment, async authorization, transactional writes, retries, batching, timeouts, dependency joins, pause/resume gates, reducer actors, watchdogs, dependent service calls, progress streams, moving aggregates, and connection-scoped cancellation.
 
-The examples keep application-owned state and concurrency explicit. They do not invent hidden Rx actors or claim operators that do not exist yet.
+The first five use-case patterns have dedicated integration tests in `test/use_cases_test.gleam`. The examples keep application-owned state and concurrency explicit; they do not invent hidden Rx actors or claim operators that do not exist yet.
 
 ## Quality control
 
@@ -104,16 +118,15 @@ zed validate
 git config core.hooksPath .githooks
 ```
 
-`pre-commit` runs the quick conformance gate. `pre-push` refuses to bypass `zed validate` and runs full conformance.
+`pre-commit` runs the quick conformance gate. `pre-push` refuses to bypass Zed validation or the formal gate and requires `TLA2TOOLS_JAR`.
 
-Direct source-tree checks:
+Quick source-tree checks:
 
 ```sh
 sh conformance/check.sh --quick
-sh conformance/check.sh --full
 ```
 
-To include the TLA+ model check:
+Full conformance requires TLA+ Tools and will fail rather than silently skip model checking:
 
 ```sh
 export TLA2TOOLS_JAR=/path/to/tla2tools.jar
