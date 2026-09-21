@@ -1,3 +1,5 @@
+import gleam/result
+
 pub type Notification(value, error) {
   Next(value)
   Error(error)
@@ -36,9 +38,9 @@ pub fn transition(
     Open, NextKind -> Ok(Open)
     Open, ErrorKind -> Ok(Terminated)
     Open, CompleteKind -> Ok(Terminated)
-    Terminated, NextKind -> Error(NotificationAfterTermination)
-    Terminated, ErrorKind -> Error(DuplicateTermination)
-    Terminated, CompleteKind -> Error(DuplicateTermination)
+    Terminated, NextKind -> result.Error(NotificationAfterTermination)
+    Terminated, ErrorKind -> result.Error(DuplicateTermination)
+    Terminated, CompleteKind -> result.Error(DuplicateTermination)
   }
 }
 
@@ -57,7 +59,7 @@ fn validate_from(
     [first, ..rest] ->
       case transition(phase, kind(first)) {
         Ok(next) -> validate_from(next, rest)
-        Error(error) -> Error(error)
+        result.Error(error) -> result.Error(error)
       }
   }
 }
