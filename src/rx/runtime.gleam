@@ -55,7 +55,7 @@ pub fn start_checked(
 pub fn register(runtime: Runtime) -> SubscriptionKey {
   let Runtime(subject) = runtime
   let id = reference.new()
-  let _ = actor.call(
+  let _ = process.call(
     subject,
     waiting: 5_000,
     sending: fn(reply_to) { Register(id, reply_to) },
@@ -102,7 +102,11 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
     Register(id, reply_to) -> {
       process.send(reply_to, Nil)
       actor.continue(State(
-        entries: dict.insert(entries, id, Entry(protocol.Open, None)),
+        entries: dict.insert(
+          entries,
+          id,
+          Entry(phase: protocol.Open, teardown: None),
+        ),
         on_protocol_error:,
       ))
     }
@@ -113,16 +117,20 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
           teardown()
           actor.continue(state)
         }
-        Ok(Entry(protocol.Terminated, _)) -> {
+        Ok(Entry(phase: protocol.Terminated, teardown: _)) -> {
           teardown()
           actor.continue(State(
             entries: dict.delete(entries, id),
             on_protocol_error:,
           ))
         }
-        Ok(Entry(protocol.Open, _)) ->
+        Ok(Entry(phase: protocol.Open, teardown: _)) ->
           actor.continue(State(
-            entries: dict.insert(entries, id, Entry(protocol.Open, Some(teardown))),
+            entries: dict.insert(
+              entries,
+              id,
+              Entry(phase: protocol.Open, teardown: Some(teardown)),
+            ),
             on_protocol_error:,
           ))
       }
@@ -155,7 +163,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
                     entries: dict.insert(
                       entries,
                       id,
-                      Entry(protocol.Terminated, None),
+                      Entry(phase: protocol.Terminated, teardown: None),
                     ),
                     on_protocol_error:,
                   ))
@@ -167,7 +175,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
     Cancel(id) ->
       case dict.get(entries, id) {
         Error(_) -> actor.continue(state)
-        Ok(Entry(_, teardown)) -> {
+        Ok(Entry(phase: _, teardown: teardown)) -> {
           case teardown {
             Some(release) -> release()
             None -> Nil
