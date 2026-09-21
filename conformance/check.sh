@@ -26,12 +26,15 @@ for required in \
   manifest.toml \
   .zpkg.toml \
   src/rx.gleam \
+  src/rx/eager.gleam \
   src/rx/runtime.gleam \
   src/rx/protocol.gleam \
   src/rx/effect.gleam \
   src/rx/future.gleam \
   src/rx/flow.gleam \
   src/rx/flow_model.gleam \
+  test/eager_test.gleam \
+  test/hardening_test.gleam \
   test/cookbook_test.gleam \
   test/use_cases_test.gleam \
   test/runtime_shutdown_test.gleam \
@@ -53,6 +56,11 @@ grep -q '^MIT License$' LICENSE || fail "LICENSE is not the declared MIT license
 grep -q 'Terminated, CompleteKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
 grep -q 'Terminated, ErrorKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
 grep -q 'Terminated, NextKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
+
+# The eager API is part of the public contract and must keep its bridge into
+# the actor-backed Observable API.
+grep -q 'pub opaque type Eager' src/rx/eager.gleam || fail "missing eager public type"
+grep -q 'pub fn to_observable' src/rx/eager.gleam || fail "missing eager-to-observable bridge"
 
 # The runtime must remain one serialized actor. Library source must not hide
 # workers or blocking receives behind operators/Futures.

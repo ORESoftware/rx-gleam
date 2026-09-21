@@ -21,21 +21,43 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
-
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
           otp-version: '27'
           gleam-version: '1.15.4'
           rebar3-version: '3'
-
       - name: Verify locked dependencies with declared minimum Gleam
         run: |
           test -f manifest.toml
           gleam deps download
           git diff --exit-code -- manifest.toml
-
       - name: Compile and test declared minimum Gleam
         run: gleam test
+
+  latest:
+    name: gleam-1.18.1-otp-29.1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '29.1'
+          gleam-version: '1.18.1'
+          rebar3-version: '3'
+      - name: Verify locked dependencies are canonical
+        run: |
+          test -f manifest.toml
+          gleam deps download
+          git diff --exit-code -- manifest.toml
+      - name: Verify canonical Gleam formatting
+        run: gleam format --check src test
+      - name: Check and test latest toolchain
+        run: |
+          gleam check
+          gleam test
 
   full:
     name: gleam-1.18-otp-28-full
@@ -45,53 +67,41 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
-
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
           otp-version: '28'
           gleam-version: '1.18.0'
           rebar3-version: '3'
-
       - name: Verify locked dependencies are canonical
         run: |
           test -f manifest.toml
           gleam deps download
           git diff --exit-code -- manifest.toml
-
       - name: Verify canonical Gleam formatting
         run: gleam format --check src test
-
       - name: Test
         run: gleam test
-
       - name: Install checksum-pinned Zed v0.3.0
         shell: bash
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/zed.tar.gz"
-          curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz \
-            -o "$archive"
+          curl --fail --silent --show-error --location --retry 3 https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz -o "$archive"
           echo "e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7  $archive" | sha256sum --check
           mkdir -p "$RUNNER_TEMP/zed-bin"
           tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
           echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
-
       - name: Validate Zed package contract
         run: |
           zed validate
           sh conformance/package-smoke.sh
-
       - name: Install checksum-pinned TLA+ tools v1.7.4
         shell: bash
         run: |
           set -euo pipefail
           jar="$RUNNER_TEMP/tla2tools.jar"
-          curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
-            -o "$jar"
+          curl --fail --silent --show-error --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$jar"
           echo "bee4a54f3ee3d4afc347c3240ec2d9e93b075104  $jar" | sha1sum --check
           echo "TLA2TOOLS_JAR=$jar" >> "$GITHUB_ENV"
-
       - name: Full conformance including TLC
         run: sh conformance/check.sh --full

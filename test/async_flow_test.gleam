@@ -89,10 +89,7 @@ pub fn merge_map_bounds_concurrency_and_emits_completion_order_test() {
   process.send(commands, Emit(3))
   process.send(commands, Finish)
 
-  let assert Ok(WorkerStarted(1, gate1)) =
-    process.receive(from: workers, within: 1000)
-  let assert Ok(WorkerStarted(2, gate2)) =
-    process.receive(from: workers, within: 1000)
+  let assert Ok(#(gate1, gate2)) = receive_worker_pair(workers)
   let assert Error(Nil) = process.receive(from: workers, within: 20)
 
   // Completing #2 frees one slot, so queued #3 begins before #1 is done.
@@ -130,10 +127,7 @@ pub fn ordered_async_map_processes_concurrently_but_emits_fifo_test() {
   process.send(commands, Emit(2))
   process.send(commands, Finish)
 
-  let assert Ok(WorkerStarted(1, gate1)) =
-    process.receive(from: workers, within: 1000)
-  let assert Ok(WorkerStarted(2, gate2)) =
-    process.receive(from: workers, within: 1000)
+  let assert Ok(#(gate1, gate2)) = receive_worker_pair(workers)
 
   // #2 finishes first but cannot pass #1 in InputOrder mode.
   process.send(gate2, Ok(20))
@@ -166,10 +160,7 @@ pub fn projected_error_is_fail_fast_and_late_success_is_ignored_test() {
   process.send(commands, Emit(2))
   process.send(commands, Emit(3))
 
-  let assert Ok(WorkerStarted(1, gate1)) =
-    process.receive(from: workers, within: 1000)
-  let assert Ok(WorkerStarted(2, gate2)) =
-    process.receive(from: workers, within: 1000)
+  let assert Ok(#(gate1, gate2)) = receive_worker_pair(workers)
 
   process.send(gate2, Error("boom"))
   receive_output(outputs) |> should.equal(Failed("boom"))
@@ -182,6 +173,24 @@ pub fn projected_error_is_fail_fast_and_late_success_is_ignored_test() {
 
   rx.unsubscribe(subscription)
   runtime.stop(runtime_)
+}
+
+fn receive_worker_pair(
+  workers: process.Subject(WorkerEvent),
+) -> Result(
+  #(process.Subject(Result(Int, String)), process.Subject(Result(Int, String))),
+  Nil,
+) {
+  case
+    process.receive(from: workers, within: 1000),
+    process.receive(from: workers, within: 1000)
+  {
+    Ok(WorkerStarted(1, gate1)), Ok(WorkerStarted(2, gate2)) ->
+      Ok(#(gate1, gate2))
+    Ok(WorkerStarted(2, gate2)), Ok(WorkerStarted(1, gate1)) ->
+      Ok(#(gate1, gate2))
+    _, _ -> Error(Nil)
+  }
 }
 
 fn controlled_async_source(

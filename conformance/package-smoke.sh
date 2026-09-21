@@ -10,6 +10,7 @@ for required in \
   gleam.toml \
   manifest.toml \
   src/rx.gleam \
+  src/rx/eager.gleam \
   src/rx/runtime.gleam \
   src/rx/protocol.gleam \
   src/rx/effect.gleam \
@@ -29,6 +30,8 @@ done
 
 grep -q '^MIT License$' LICENSE
 grep -q 'pub opaque type Observable' src/rx.gleam
+grep -q 'pub opaque type Eager' src/rx/eager.gleam
+grep -q 'pub fn to_observable' src/rx/eager.gleam
 grep -q 'pub opaque type Runtime' src/rx/runtime.gleam
 grep -q 'pub opaque type Effect' src/rx/effect.gleam
 grep -q 'pub opaque type Future' src/rx/future.gleam
