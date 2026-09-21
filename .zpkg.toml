@@ -13,10 +13,6 @@ url = "https://github.com/ORESoftware/rx-gleam"
 [install]
 dir = ".vendor/.zed"
 
-[targets.repository]
-dir = "."
-adapter = "none"
-
 [targets.gleam]
 dir = "."
 adapter = "none"
