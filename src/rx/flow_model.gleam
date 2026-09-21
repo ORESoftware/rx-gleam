@@ -26,6 +26,7 @@ pub type State {
     pending: List(Int),
     active: List(Int),
     completed: List(Int),
+    emitted: List(Int),
     input_done: Bool,
     status: Status,
   )
@@ -56,6 +57,7 @@ pub fn new(concurrency: Int, order: Order) -> State {
     pending: [],
     active: [],
     completed: [],
+    emitted: [],
     input_done: False,
     status: Running,
   )
@@ -78,20 +80,40 @@ pub fn invariants_hold(state: State) -> Bool {
     && state.next_emit >= 0
     && state.next_emit <= state.next_sequence
   let unique_sets =
-    unique(state.pending) && unique(state.active) && unique(state.completed)
+    unique(state.pending)
+    && unique(state.active)
+    && unique(state.completed)
+    && unique(state.emitted)
   let disjoint_sets =
     disjoint(state.pending, state.active)
     && disjoint(state.pending, state.completed)
+    && disjoint(state.pending, state.emitted)
     && disjoint(state.active, state.completed)
+    && disjoint(state.active, state.emitted)
+    && disjoint(state.completed, state.emitted)
   let known_sequences =
     all_below(state.pending, state.next_sequence)
     && all_below(state.active, state.next_sequence)
     && all_below(state.completed, state.next_sequence)
+    && all_below(state.emitted, state.next_sequence)
+  let running_conserves_work = case state.status {
+    Running -> accepted_exactly_once(state, 0)
+    _ -> True
+  }
+  let ordering_consistent = case state.order {
+    InputOrder ->
+      state.emitted == prefix(state.next_emit)
+      && state.next_emit == list.length(state.emitted)
+    CompletionOrder -> state.completed == []
+  }
   let terminal_is_empty = case state.status {
     Running -> True
     Failed -> empty_work(state)
     Cancelled -> empty_work(state)
-    Drained -> empty_work(state) && state.input_done
+    Drained ->
+      empty_work(state)
+      && state.input_done
+      && list.length(state.emitted) == state.next_sequence
   }
 
   capacity_ok
@@ -99,6 +121,8 @@ pub fn invariants_hold(state: State) -> Bool {
   && unique_sets
   && disjoint_sets
   && known_sequences
+  && running_conserves_work
+  && ordering_consistent
   && terminal_is_empty
 }
 
@@ -124,14 +148,17 @@ fn transition_running(state: State, event: Event) -> #(State, List(Command)) {
         #(False, _) -> #(state, [])
         #(True, remaining_active) -> {
           let inactive = State(..state, active: remaining_active)
-          let #(emitted, emit_commands) = case state.order {
-            CompletionOrder -> #(inactive, [Emit(sequence)])
+          let #(emitted_state, emit_commands) = case state.order {
+            CompletionOrder -> #(
+              State(..inactive, emitted: list.append(inactive.emitted, [sequence])),
+              [Emit(sequence)],
+            )
             InputOrder ->
               flush_ordered(
                 State(..inactive, completed: [sequence, ..inactive.completed]),
               )
           }
-          let #(refilled, start_commands) = fill_slots(emitted, [])
+          let #(refilled, start_commands) = fill_slots(emitted_state, [])
           finish_if_drained(
             refilled,
             list.append(emit_commands, start_commands),
@@ -187,7 +214,12 @@ fn flush_ordered(state: State) -> #(State, List(Command)) {
       let sequence = state.next_emit
       let #(next, later_commands) =
         flush_ordered(
-          State(..state, next_emit: sequence + 1, completed: remaining),
+          State(
+            ..state,
+            next_emit: sequence + 1,
+            completed: remaining,
+            emitted: list.append(state.emitted, [sequence]),
+          ),
         )
       #(next, [Emit(sequence), ..later_commands])
     }
@@ -206,6 +238,41 @@ fn finish_if_drained(
 
 fn empty_work(state: State) -> Bool {
   state.pending == [] && state.active == [] && state.completed == []
+}
+
+fn accepted_exactly_once(state: State, sequence: Int) -> Bool {
+  case sequence >= state.next_sequence {
+    True -> True
+    False ->
+      count_occurrences(state.pending, sequence)
+        + count_occurrences(state.active, sequence)
+        + count_occurrences(state.completed, sequence)
+        + count_occurrences(state.emitted, sequence)
+        == 1
+      && accepted_exactly_once(state, sequence + 1)
+  }
+}
+
+fn count_occurrences(items: List(Int), wanted: Int) -> Int {
+  case items {
+    [] -> 0
+    [first, ..rest] ->
+      case first == wanted {
+        True -> 1 + count_occurrences(rest, wanted)
+        False -> count_occurrences(rest, wanted)
+      }
+  }
+}
+
+fn prefix(length: Int) -> List(Int) {
+  prefix_loop(0, length, []) |> list.reverse
+}
+
+fn prefix_loop(current: Int, length: Int, reversed: List(Int)) -> List(Int) {
+  case current >= length {
+    True -> reversed
+    False -> prefix_loop(current + 1, length, [current, ..reversed])
+  }
 }
 
 fn remove(items: List(Int), wanted: Int) -> #(Bool, List(Int)) {
