@@ -32,7 +32,8 @@ for required in \
   formal/RxAsyncFlowOrdered.cfg \
   formal/RxAsyncFlowCompletion.cfg \
   docs/FORMAL_METHODS.md \
-  docs/COOKBOOK.md
+  docs/COOKBOOK.md \
+  docs/USE_CASES.md
 do
   [ -f "$required" ] || fail "missing required file: $required"
 done
@@ -49,6 +50,16 @@ actor_count=$(grep -R 'actor\.new' src --include='*.gleam' | wc -l | tr -d ' ')
 # The cookbook is an executable 20-recipe contract.
 recipe_count=$(grep -c '^pub fn cookbook_[0-9][0-9]_.*_test()' test/cookbook_test.gleam)
 [ "$recipe_count" = "20" ] || fail "expected exactly 20 cookbook tests, found $recipe_count"
+
+# The server-side use-cases guide is also intentionally a 20-case contract.
+use_case_count=$(grep -Ec '^## [0-9]+\. ' docs/USE_CASES.md)
+[ "$use_case_count" = "20" ] || fail "expected exactly 20 server-side use cases, found $use_case_count"
+
+grep -q '^## 1\. Async queue with an async processing step$' docs/USE_CASES.md || fail "missing async queue use case"
+grep -q '^## 2\. De-duplicating requests or stream items with an in-memory set$' docs/USE_CASES.md || fail "missing de-duplication use case"
+grep -q '^## 3\. Grouping requests by tenant, partition, account, or resource key$' docs/USE_CASES.md || fail "missing grouping use case"
+grep -q '^## 4\. Merging multiple server-side push sources$' docs/USE_CASES.md || fail "missing stream merging use case"
+grep -q '^## 5\. Rebasing heterogeneous streams onto one canonical stream$' docs/USE_CASES.md || fail "missing stream rebasing use case"
 
 if [ "$mode" = "--full" ]; then
   command -v git >/dev/null 2>&1 || fail "git is required for full conformance"
