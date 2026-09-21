@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$root"
+sh ./conformance/check.sh --quick
