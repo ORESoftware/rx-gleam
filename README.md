@@ -1,6 +1,6 @@
 # rx-gleam
 
-A serialized, single-actor Reactive Extensions library for Gleam.
+A serialized, single-actor Reactive Extensions library for Gleam, with a separate composable eager API for finite in-memory sequences.
 
 ## Design
 
@@ -10,13 +10,14 @@ A serialized, single-actor Reactive Extensions library for Gleam.
 - observer callbacks are dispatched through that actor and therefore execute serially;
 - operators do not create hidden actors, worker pools, or schedulers;
 - callers can use BEAM processes, timers, sockets, ports, FFI callbacks, or any other async mechanism through `rx/effect.Effect` / `rx/future.Future`;
-- observable values and errors stay statically typed; the runtime does not erase them to `Dynamic`.
+- observable values and errors stay statically typed; the runtime does not erase them to `Dynamic`;
+- finite already-materialized data can use `rx/eager.Eager` without starting a runtime, then cross into the actor-backed API with `eager.to_observable`.
 
 The guiding rule is: **ReactiveX defines composition; BEAM defines concurrency.**
 
-The package declares Gleam `>= 1.15.4`. CI verifies that floor on OTP 27 and separately runs the full Gleam 1.18 / OTP 28 conformance gate. `manifest.toml` is committed and checked for dependency-resolution drift.
+The package declares Gleam `>= 1.15.4`. CI verifies that floor on OTP 27, runs the current toolchain on Gleam 1.18.1 / OTP 29.1, and separately runs the full Gleam 1.18 / OTP 28 Zed/TLA+ conformance gate. `manifest.toml` is committed and checked for dependency-resolution drift.
 
-## Core API
+## Actor-backed Observable API
 
 ```gleam
 import gleam/io
@@ -49,7 +50,31 @@ Registration is deliberately nonblocking and reentrant: an observer callback may
 
 `runtime.stop(runtime)` is also nonblocking, so it is safe to request shutdown from inside an observer callback. Before the actor exits it runs stored subscription teardowns and cancels active async-flow Futures.
 
-Current primitives include `Observable(value, error)`, `Observer(value, error)`, `Subscription`, `Emitter(value, error)`, `Runtime`, `RuntimeError`, `Effect(value, error)`, `Future(value, error)`, `create`, `of`, `from_list`, `empty`, `fail`, `map`, `filter`, `tap`, cancellation, `from_future`, `concat_map`, bounded `merge_map`, ordered concurrent mapping, and async filtering.
+## Eager finite API
+
+Use `rx/eager` when all values are already available and immediate evaluation is desirable. It is intentionally ordinary, immutable Gleam composition rather than a second scheduler/runtime.
+
+```gleam
+import rx/eager
+
+pub fn eager_example() {
+  let result =
+    eager.from_list([1, 2, 3, 4, 5])
+    |> eager.map(fn(x) { x * 3 })
+    |> eager.filter(fn(x) { x > 6 })
+    |> eager.take(2)
+    |> eager.to_result
+
+  // Ok([9, 12])
+  result
+}
+```
+
+The eager surface includes `from_list`, `from_result`, `of`, `empty`, `fail`, `map`, `map_error`, `filter`, `tap`, `take`, `skip`, `scan`, `flat_map`, `append`, and `fold`. `eager.to_observable` moves a materialized sequence into the actor-backed Observable API without changing its values or error type.
+
+The two APIs deliberately coexist: eager composition is useful for finite data and tests; the Observable/Future/flow APIs provide serialized lifecycle management and asynchronous composition.
+
+Current primitives include `Eager(value, error)`, `Observable(value, error)`, `Observer(value, error)`, `Subscription`, `Emitter(value, error)`, `Runtime`, `RuntimeError`, `Effect(value, error)`, `Future(value, error)`, `create`, `of`, `from_list`, `empty`, `fail`, `map`, `filter`, `tap`, cancellation, `from_future`, `concat_map`, bounded `merge_map`, ordered concurrent mapping, and async filtering.
 
 ## Callback discipline
 
@@ -75,7 +100,8 @@ The repository includes:
 
 - exhaustive generated protocol traces through length 6;
 - an independently implemented reference model used as a differential oracle;
-- runtime tests for post-terminal rejection, reentrant subscription, shutdown cleanup, and exactly-once teardown;
+- runtime tests for post-terminal rejection, reentrant subscription, shutdown cleanup, exactly-once teardown, late emissions, and subscription isolation;
+- eager/Observable bridge tests so the finite API cannot silently drift away from the runtime API;
 - TLA+ specifications under `formal/` for the notification protocol and async-flow machine;
 - explicit operator proof obligations in [`docs/FORMAL_METHODS.md`](docs/FORMAL_METHODS.md).
 
