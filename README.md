@@ -130,6 +130,14 @@ See [`docs/USE_CASES.md`](docs/USE_CASES.md) for 20 problem statements with Glea
 
 The first five use-case patterns have dedicated integration tests in `test/use_cases_test.gleam`. The examples keep application-owned state and concurrency explicit; they do not invent hidden Rx actors or claim operators that do not exist yet.
 
+## Full-stack browser: JavaScript + optional WASM
+
+See [`docs/FULL_STACK_BROWSER.md`](docs/FULL_STACK_BROWSER.md) for the frontend/full-stack architecture.
+
+The browser path is **Gleam -> JavaScript**, not direct Gleam application -> WASM. The current actor-backed runtime remains deliberately BEAM-specific; the documented next step is a target-neutral semantic core plus a browser Runtime that preserves the same one-serialization-boundary contract using the JavaScript event loop. Optional WASM modules can sit behind JavaScript FFI for CPU-heavy application-owned effects.
+
+The guide also covers a server/browser/shared-package layout, `gleam build --target javascript`, Fetch/RPC/GraphQL/WebSocket adapters, Lustre integration, browser conformance testing, and a staged migration plan for making `rx-gleam` genuinely full-stack.
+
 ## Quality control
 
 The repository uses zed-pkg as its package/governance layer:

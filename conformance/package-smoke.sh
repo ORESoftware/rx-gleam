@@ -19,6 +19,7 @@ for required in \
   docs/COOKBOOK.md \
   docs/USE_CASES.md \
   docs/FORMAL_METHODS.md \
+  docs/FULL_STACK_BROWSER.md \
   formal/RxProtocol.tla \
   formal/RxAsyncFlow.tla
 do
@@ -40,6 +41,7 @@ grep -q 'pub fn merge_map' src/rx/flow.gleam
 grep -q 'pub fn map_ordered' src/rx/flow.gleam
 grep -q 'pub fn filter_async_concurrent' src/rx/flow.gleam
 grep -q '^# rx-gleam server-side use cases$' docs/USE_CASES.md
+grep -q '^# Full-stack Gleam: browser JavaScript, WASM interop, and rx-gleam$' docs/FULL_STACK_BROWSER.md
 
 grep -q 'name = "gleam_erlang"' manifest.toml
 grep -q 'name = "gleam_otp"' manifest.toml

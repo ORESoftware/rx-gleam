@@ -45,7 +45,8 @@ for required in \
   formal/RxAsyncFlowCompletion.cfg \
   docs/FORMAL_METHODS.md \
   docs/COOKBOOK.md \
-  docs/USE_CASES.md
+  docs/USE_CASES.md \
+  docs/FULL_STACK_BROWSER.md
 do
   [ -f "$required" ] || fail "missing required file: $required"
 done
@@ -92,6 +93,13 @@ grep -q '^## 2\. De-duplicating requests or stream items with an in-memory set$'
 grep -q '^## 3\. Grouping requests by tenant, partition, account, or resource key$' docs/USE_CASES.md || fail "missing grouping use case"
 grep -q '^## 4\. Merging multiple server-side push sources$' docs/USE_CASES.md || fail "missing stream merging use case"
 grep -q '^## 5\. Rebasing heterogeneous streams onto one canonical stream$' docs/USE_CASES.md || fail "missing stream rebasing use case"
+
+# Browser/full-stack documentation must preserve the target distinction: Gleam
+# application code targets JavaScript in browsers; WASM is an interoperability
+# layer rather than a claimed third application target.
+grep -q 'Gleam -> JavaScript' docs/FULL_STACK_BROWSER.md || fail "full-stack browser doc must describe the JavaScript target"
+grep -q 'does not currently expose WebAssembly as an application-code compilation target' docs/FULL_STACK_BROWSER.md || fail "full-stack browser doc must not imply direct Gleam-to-WASM application compilation"
+grep -q 'gleam check --target javascript' docs/FULL_STACK_BROWSER.md || fail "full-stack browser doc must define a future JavaScript conformance gate"
 
 if [ "$mode" = "--full" ]; then
   command -v git >/dev/null 2>&1 || fail "git is required for full conformance"
