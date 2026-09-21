@@ -1,0 +1,17 @@
+name = "rx_gleam"
+version = "0.1.0"
+description = "Composable eager and lazy reactive streams for Gleam"
+licences = ["MIT"]
+
+target = "erlang"
+
+[repository]
+type = "github"
+user = "ORESoftware"
+repo = "rx-gleam"
+
+[dependencies]
+gleam_stdlib = ">= 0.60.0 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
