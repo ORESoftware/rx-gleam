@@ -58,10 +58,8 @@ jobs:
           gleam deps download
           git diff --exit-code -- manifest.toml
 
-      - name: Show canonical Gleam formatter diff
-        run: |
-          gleam format src test
-          git diff --exit-code -- src test
+      - name: Verify canonical Gleam formatting
+        run: gleam format --check src test
 
       - name: Check and test latest toolchain
         run: |
