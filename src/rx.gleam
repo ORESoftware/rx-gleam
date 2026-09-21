@@ -1,5 +1,5 @@
 import rx/protocol.{type Notification, Complete, Error, Next}
-import rx/runtime.{type Runtime}
+import rx/runtime.{type Runtime, type RuntimeError}
 
 pub type Observer(value, error) {
   Observer(
@@ -17,7 +17,10 @@ pub opaque type Subscription {
 }
 
 pub opaque type Observable(value, error) {
-  Observable(subscribe_: fn(Runtime, Observer(value, error)) -> Subscription)
+  Observable(
+    subscribe_: fn(Runtime, Observer(value, error)) ->
+      Result(Subscription, RuntimeError),
+  )
 }
 
 pub type Emitter(value, error) {
@@ -36,18 +39,22 @@ pub fn create(
   producer: fn(Emitter(value, error)) -> fn() -> Nil,
 ) -> Observable(value, error) {
   Observable(fn(runtime_, observer_) {
-    let key = runtime.register(runtime_)
-    let emitter = Emitter(fn(notification) {
-      runtime.dispatch(
-        runtime_,
-        key,
-        protocol.kind(notification),
-        fn() { notify(observer_, notification) },
-      )
-    })
-    let teardown = producer(emitter)
-    runtime.set_teardown(runtime_, key, teardown)
-    Subscription(runtime_: runtime_, key: key)
+    case runtime.register(runtime_) {
+      Error(reason) -> Error(reason)
+      Ok(key) -> {
+        let emitter = Emitter(fn(notification) {
+          runtime.dispatch(
+            runtime_,
+            key,
+            protocol.kind(notification),
+            fn() { notify(observer_, notification) },
+          )
+        })
+        let teardown = producer(emitter)
+        runtime.set_teardown(runtime_, key, teardown)
+        Ok(Subscription(runtime_: runtime_, key: key))
+      }
+    }
   })
 }
 
@@ -55,7 +62,7 @@ pub fn subscribe(
   observable: Observable(value, error),
   runtime_: Runtime,
   observer_: Observer(value, error),
-) -> Subscription {
+) -> Result(Subscription, RuntimeError) {
   let Observable(subscribe_) = observable
   subscribe_(runtime_, observer_)
 }
