@@ -37,6 +37,35 @@ jobs:
       - name: Compile and test declared minimum Gleam
         run: gleam test
 
+  latest:
+    name: gleam-1.18.1-otp-29.1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '29.1'
+          gleam-version: '1.18.1'
+          rebar3-version: '3'
+
+      - name: Verify locked dependencies are canonical
+        run: |
+          test -f manifest.toml
+          gleam deps download
+          git diff --exit-code -- manifest.toml
+
+      - name: Verify canonical Gleam formatting
+        run: gleam format --check src test
+
+      - name: Check and test latest toolchain
+        run: |
+          gleam check
+          gleam test
+
   full:
     name: gleam-1.18-otp-28-full
     runs-on: ubuntu-24.04
