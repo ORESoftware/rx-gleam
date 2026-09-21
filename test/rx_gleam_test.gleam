@@ -110,9 +110,7 @@ pub fn subscribe_stop_does_not_pull_again_test() {
   let stream: rx.Observable(Int, String) =
     rx.create(fn() {
       rx.source(
-        fn() {
-          rx.Emit(1, fn() { panic as "subscription pulled after Stop" })
-        },
+        fn() { rx.Emit(1, fn() { panic as "subscription pulled after Stop" }) },
         fn() { Nil },
       )
     })
