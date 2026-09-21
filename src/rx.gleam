@@ -10,7 +10,10 @@ pub type Observer(value, error) {
 }
 
 pub opaque type Subscription {
-  Subscription(cancel: fn() -> Nil)
+  Subscription(
+    runtime_: Runtime,
+    key: runtime.SubscriptionKey,
+  )
 }
 
 pub opaque type Observable(value, error) {
@@ -32,29 +35,40 @@ pub fn observer(
 pub fn create(
   producer: fn(Emitter(value, error)) -> fn() -> Nil,
 ) -> Observable(value, error) {
-  Observable(fn(runtime, observer) {
-    let cancel = producer(Emitter(fn(notification) {
-      runtime.dispatch(runtime, fn() { notify(observer, notification) })
-    }))
-    Subscription(cancel)
+  Observable(fn(runtime_, observer_) {
+    let key = runtime.register(runtime_)
+    let emitter = Emitter(fn(notification) {
+      runtime.dispatch(
+        runtime_,
+        key,
+        protocol.kind(notification),
+        fn() { notify(observer_, notification) },
+      )
+    })
+    let teardown = producer(emitter)
+    runtime.set_teardown(runtime_, key, teardown)
+    Subscription(runtime_: runtime_, key: key)
   })
 }
 
 pub fn subscribe(
   observable: Observable(value, error),
-  runtime: Runtime,
-  observer: Observer(value, error),
+  runtime_: Runtime,
+  observer_: Observer(value, error),
 ) -> Subscription {
   let Observable(subscribe_) = observable
-  subscribe_(runtime, observer)
+  subscribe_(runtime_, observer_)
 }
 
 pub fn unsubscribe(subscription: Subscription) -> Nil {
-  let Subscription(cancel) = subscription
-  cancel()
+  let Subscription(runtime_: runtime_, key: key) = subscription
+  runtime.cancel(runtime_, key)
 }
 
-pub fn emit(emitter: Emitter(value, error), notification: Notification(value, error)) -> Nil {
+pub fn emit(
+  emitter: Emitter(value, error),
+  notification: Notification(value, error),
+) -> Nil {
   let Emitter(send) = emitter
   send(notification)
 }
@@ -111,12 +125,16 @@ pub fn map(
   observable: Observable(a, error),
   transform: fn(a) -> b,
 ) -> Observable(b, error) {
-  Observable(fn(runtime, downstream) {
-    subscribe(observable, runtime, Observer(
-      on_next: fn(value) { downstream.on_next(transform(value)) },
-      on_error: downstream.on_error,
-      on_complete: downstream.on_complete,
-    ))
+  Observable(fn(runtime_, downstream) {
+    subscribe(
+      observable,
+      runtime_,
+      Observer(
+        on_next: fn(value) { downstream.on_next(transform(value)) },
+        on_error: downstream.on_error,
+        on_complete: downstream.on_complete,
+      ),
+    )
   })
 }
 
@@ -124,17 +142,21 @@ pub fn filter(
   observable: Observable(value, error),
   predicate: fn(value) -> Bool,
 ) -> Observable(value, error) {
-  Observable(fn(runtime, downstream) {
-    subscribe(observable, runtime, Observer(
-      on_next: fn(value) {
-        case predicate(value) {
-          True -> downstream.on_next(value)
-          False -> Nil
-        }
-      },
-      on_error: downstream.on_error,
-      on_complete: downstream.on_complete,
-    ))
+  Observable(fn(runtime_, downstream) {
+    subscribe(
+      observable,
+      runtime_,
+      Observer(
+        on_next: fn(value) {
+          case predicate(value) {
+            True -> downstream.on_next(value)
+            False -> Nil
+          }
+        },
+        on_error: downstream.on_error,
+        on_complete: downstream.on_complete,
+      ),
+    )
   })
 }
 
@@ -148,10 +170,13 @@ pub fn tap(
   })
 }
 
-fn notify(observer: Observer(value, error), notification: Notification(value, error)) -> Nil {
+fn notify(
+  observer_: Observer(value, error),
+  notification: Notification(value, error),
+) -> Nil {
   case notification {
-    Next(value) -> observer.on_next(value)
-    Error(reason) -> observer.on_error(reason)
-    Complete -> observer.on_complete()
+    Next(value) -> observer_.on_next(value)
+    Error(reason) -> observer_.on_error(reason)
+    Complete -> observer_.on_complete()
   }
 }
