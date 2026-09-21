@@ -1,0 +1,12 @@
+name = "rx_gleam_dummy_server"
+version = "0.1.0"
+gleam = ">= 1.18.0"
+description = "Executable mirror of the oresoftware-test external rx-gleam consumer"
+licences = ["MIT"]
+
+[dependencies]
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+gleam_erlang = ">= 1.0.0 and < 2.0.0"
+gleam_http = ">= 4.4.0 and < 5.0.0"
+mist = ">= 6.0.3 and < 7.0.0"
+rx_gleam = { git = "https://github.com/ORESoftware/rx-gleam.git", ref = "83e7a8827aea4cb44ca55b66bb9b2514ccde839c" }
