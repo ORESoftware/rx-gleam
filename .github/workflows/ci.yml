@@ -5,20 +5,16 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [erlang, javascript]
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Gleam
+      - name: Set up latest Gleam and OTP
         uses: erlef/setup-beam@v1
         with:
           otp-version: "29.1"
@@ -28,13 +24,35 @@ jobs:
       - name: Download dependencies
         run: gleam deps download
 
-      - name: Show formatter changes
+      - name: Normalize source and test layout
         run: |
+          if [ -f test/rx_test.gleam ] && [ ! -f test/rx_gleam_test.gleam ]; then
+            mv test/rx_test.gleam test/rx_gleam_test.gleam
+          fi
           gleam format src test
+          git diff --check
           git diff -- src test
 
-      - name: Check ${{ matrix.target }} target
-        run: gleam check --target ${{ matrix.target }}
+      - name: Check Erlang target
+        run: gleam check --target erlang
 
-      - name: Test ${{ matrix.target }} target
-        run: gleam test --target ${{ matrix.target }}
+      - name: Test Erlang target
+        run: gleam test --target erlang
+
+      - name: Check JavaScript target
+        run: gleam check --target javascript
+
+      - name: Test JavaScript target
+        run: gleam test --target javascript
+
+      - name: Commit normalized sources
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/eager-lazy-reactive-core'
+        run: |
+          if git diff --quiet -- src test; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src test
+          git commit -m "style: normalize Gleam sources and test entrypoint"
+          git push
