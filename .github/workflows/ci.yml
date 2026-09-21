@@ -42,3 +42,72 @@ jobs:
 
       - name: Build documentation for ${{ matrix.target }} target
         run: gleam docs build --target ${{ matrix.target }}
+
+  external-consumer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integration/oresoftware-test-dummy-server
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Gleam and OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.1"
+          gleam-version: "1.18.1"
+          rebar3-version: "3"
+
+      - name: Verify external Git dependency pin
+        run: grep -F 'ref = "83e7a8827aea4cb44ca55b66bb9b2514ccde839c"' gleam.toml
+
+      - name: Download external consumer dependencies
+        run: gleam deps download
+
+      - name: Check external consumer formatting
+        run: gleam format --check src
+
+      - name: Check external consumer
+        run: gleam check --target erlang
+
+      - name: Build external consumer with warnings as errors
+        run: gleam build --target erlang --warnings-as-errors
+
+      - name: Run dummy server and validate rx pipelines over HTTP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gleam run >server.log 2>&1 &
+          server_pid=$!
+
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/health >health.txt; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat server.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat server.log
+            exit 1
+          fi
+
+          test "$(cat health.txt)" = "ok"
+          test "$(curl -fsS http://127.0.0.1:8099/lazy)" = "6,8,10"
+          test "$(curl -fsS http://127.0.0.1:8099/eager)" = "6,9"
+          test "$(curl -fsS http://127.0.0.1:8099/bridge)" = "4,5"
+          test "$(curl -fsS http://127.0.0.1:8099/error)" = "mapped:boom"
