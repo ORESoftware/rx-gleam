@@ -34,10 +34,8 @@ jobs:
           gleam deps download
           git diff --exit-code -- manifest.toml
 
-      - name: Verify declared minimum Gleam compatibility
-        run: |
-          gleam format --check src test
-          gleam test
+      - name: Compile and test declared minimum Gleam
+        run: gleam test
 
   full:
     name: gleam-1.18-otp-28-full
