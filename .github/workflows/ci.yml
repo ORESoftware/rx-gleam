@@ -52,10 +52,8 @@ jobs:
           test -f manifest.toml
           gleam deps download
           git diff --exit-code -- manifest.toml
-      - name: Show async-flow formatter diff
-        run: |
-          gleam format test/async_flow_test.gleam
-          git diff --exit-code -- test/async_flow_test.gleam
+      - name: Verify canonical Gleam formatting
+        run: gleam format --check src test
       - name: Check and test latest toolchain
         run: |
           gleam check
