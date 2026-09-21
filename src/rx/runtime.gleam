@@ -14,6 +14,10 @@ pub opaque type SubscriptionKey {
   SubscriptionKey(reference.Reference)
 }
 
+pub type RuntimeError {
+  RegistrationTimeout
+}
+
 type Entry {
   Entry(
     phase: protocol.Phase,
@@ -52,15 +56,16 @@ pub fn start_checked(
   })
 }
 
-pub fn register(runtime: Runtime) -> SubscriptionKey {
+pub fn register(runtime: Runtime) -> Result(SubscriptionKey, RuntimeError) {
   let Runtime(subject) = runtime
   let id = reference.new()
-  let _ = process.call(
-    subject,
-    waiting: 5_000,
-    sending: fn(reply_to) { Register(id, reply_to) },
-  )
-  SubscriptionKey(id)
+  let reply_to = process.new_subject()
+  process.send(subject, Register(id, reply_to))
+
+  case process.receive(from: reply_to, within: 5_000) {
+    Ok(Nil) -> Ok(SubscriptionKey(id))
+    Error(Nil) -> Error(RegistrationTimeout)
+  }
 }
 
 pub fn set_teardown(
