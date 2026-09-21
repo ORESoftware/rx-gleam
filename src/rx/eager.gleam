@@ -31,12 +31,16 @@ pub fn fail(error: error) -> Eager(value, error) {
 }
 
 /// Materialize a lazy observable immediately.
-pub fn from_observable(observable: rx.Observable(value, error)) -> Eager(value, error) {
+pub fn from_observable(
+  observable: rx.Observable(value, error),
+) -> Eager(value, error) {
   Eager(rx.to_list(observable))
 }
 
 /// Convert an eager sequence to a cold observable.
-pub fn to_observable(sequence: Eager(value, error)) -> rx.Observable(value, error) {
+pub fn to_observable(
+  sequence: Eager(value, error),
+) -> rx.Observable(value, error) {
   case sequence {
     Eager(Ok(values)) -> rx.from_list(values)
     Eager(Error(error)) -> rx.fail(error)
@@ -57,10 +61,7 @@ pub fn to_result(sequence: Eager(value, error)) -> Result(List(value), error) {
 }
 
 /// Transform all values immediately.
-pub fn map(
-  sequence: Eager(a, error),
-  mapper: fn(a) -> b,
-) -> Eager(b, error) {
+pub fn map(sequence: Eager(a, error), mapper: fn(a) -> b) -> Eager(b, error) {
   case sequence {
     Eager(Ok(values)) -> Eager(Ok(map_list(values, mapper)))
     Eager(Error(error)) -> Eager(Error(error))
@@ -162,7 +163,10 @@ fn map_list(values: List(a), mapper: fn(a) -> b) -> List(b) {
   }
 }
 
-fn filter_list(values: List(value), predicate: fn(value) -> Bool) -> List(value) {
+fn filter_list(
+  values: List(value),
+  predicate: fn(value) -> Bool,
+) -> List(value) {
   case values {
     [] -> []
     [first, ..rest] -> {

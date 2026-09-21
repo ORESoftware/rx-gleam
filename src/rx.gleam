@@ -380,11 +380,13 @@ fn distinct_next(
   case next() {
     Emit(value, continuation) -> {
       case seen {
-        NoneSeen -> Emit(value, distinct_step(continuation, Seen(value), equals))
+        NoneSeen ->
+          Emit(value, distinct_step(continuation, Seen(value), equals))
         Seen(previous) ->
           case equals(previous, value) {
             True -> distinct_next(continuation, seen, equals)
-            False -> Emit(value, distinct_step(continuation, Seen(value), equals))
+            False ->
+              Emit(value, distinct_step(continuation, Seen(value), equals))
           }
       }
     }
@@ -422,7 +424,8 @@ fn collect(
   reversed: List(value),
 ) -> Result(List(value), error) {
   case next() {
-    Emit(value, continuation) -> collect(continuation, close, [value, ..reversed])
+    Emit(value, continuation) ->
+      collect(continuation, close, [value, ..reversed])
     Failed(error) -> {
       close()
       Error(error)

@@ -51,10 +51,7 @@ pub fn lazy_failure_test() {
 pub fn low_level_source_is_composable_test() {
   let stream: rx.Observable(Int, String) =
     rx.create(fn() {
-      rx.source(
-        fn() { rx.Emit(21, fn() { rx.Complete }) },
-        fn() { Nil },
-      )
+      rx.source(fn() { rx.Emit(21, fn() { rx.Complete }) }, fn() { Nil })
     })
     |> rx.map(fn(value) { value * 2 })
 
