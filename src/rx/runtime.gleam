@@ -11,11 +11,14 @@ type Message {
   Stop
 }
 
-pub fn start() -> actor.StartResult(Runtime) {
+pub fn start() -> Result(Runtime, actor.StartError) {
   actor.new(Nil)
   |> actor.on_message(handle_message)
   |> actor.start
-  |> result.map(fn(subject) { Runtime(subject) })
+  |> result.map(fn(started) {
+    let actor.Started(pid: _, data: subject) = started
+    Runtime(subject)
+  })
 }
 
 pub fn dispatch(runtime: Runtime, work: fn() -> Nil) -> Nil {
