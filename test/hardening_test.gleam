@@ -29,8 +29,7 @@ pub fn synchronous_terminal_source_runs_late_teardown_once_test() {
       fn() { process.send(events, TornDown) }
     })
 
-  let assert Ok(subscription) =
-    rx.subscribe(source, runtime_, observer(events))
+  let assert Ok(subscription) = rx.subscribe(source, runtime_, observer(events))
 
   receive(events) |> should.equal(Value(1))
   receive(events) |> should.equal(Completed)
@@ -55,8 +54,7 @@ pub fn late_emission_after_unsubscribe_is_ignored_test() {
       fn() { process.send(events, TornDown) }
     })
 
-  let assert Ok(subscription) =
-    rx.subscribe(source, runtime_, observer(events))
+  let assert Ok(subscription) = rx.subscribe(source, runtime_, observer(events))
   let assert Ok(emitter) = process.receive(from: ready, within: 1000)
 
   rx.unsubscribe(subscription)
