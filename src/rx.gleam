@@ -18,8 +18,8 @@ pub type Step(value, error) {
 
 /// A per-subscription source.
 ///
-/// `close` is called exactly once by the built-in terminal runners when they
-/// finish normally, fail, or are stopped by an observer.
+/// Built-in terminal runners call `close` once when they complete, fail, or are
+/// stopped by an observer. User callbacks that panic abort normal cleanup.
 pub opaque type Source(value, error) {
   Source(next: fn() -> Step(value, error), close: fn() -> Nil)
 }
@@ -70,6 +70,14 @@ pub fn from_list(values: List(value)) -> Observable(value, error) {
   create(fn() { source(list_step(values), noop) })
 }
 
+/// Construct an observable from a result.
+pub fn from_result(result: Result(value, error)) -> Observable(value, error) {
+  case result {
+    Ok(value) -> of(value)
+    Error(error) -> fail(error)
+  }
+}
+
 /// Emit exactly one value.
 pub fn of(value: value) -> Observable(value, error) {
   from_list([value])
@@ -101,12 +109,7 @@ pub fn defer_value(factory: fn() -> value) -> Observable(value, error) {
 pub fn defer_result(
   factory: fn() -> Result(value, error),
 ) -> Observable(value, error) {
-  defer(fn() {
-    case factory() {
-      Ok(value) -> of(value)
-      Error(error) -> fail(error)
-    }
-  })
+  defer(fn() { from_result(factory()) })
 }
 
 /// Lazily transform each value.
@@ -117,6 +120,17 @@ pub fn map(
   create(fn() {
     let Source(next, close) = open(observable)
     source(map_step(next, mapper), close)
+  })
+}
+
+/// Lazily transform failures while preserving successful values.
+pub fn map_error(
+  observable: Observable(value, a),
+  mapper: fn(a) -> b,
+) -> Observable(value, b) {
+  create(fn() {
+    let Source(next, close) = open(observable)
+    source(map_error_step(next, mapper), close)
   })
 }
 
@@ -143,25 +157,37 @@ pub fn tap(
 }
 
 /// Emit at most `count` values.
+///
+/// A non-positive count returns an empty observable without opening upstream.
 pub fn take(
   observable: Observable(value, error),
   count: Int,
 ) -> Observable(value, error) {
-  create(fn() {
-    let Source(next, close) = open(observable)
-    source(take_step(next, count), close)
-  })
+  case count <= 0 {
+    True -> empty()
+    False ->
+      create(fn() {
+        let Source(next, close) = open(observable)
+        source(take_step(next, count), close)
+      })
+  }
 }
 
 /// Skip the first `count` values.
+///
+/// A non-positive count returns the original observable unchanged.
 pub fn skip(
   observable: Observable(value, error),
   count: Int,
 ) -> Observable(value, error) {
-  create(fn() {
-    let Source(next, close) = open(observable)
-    source(skip_step(next, count), close)
-  })
+  case count <= 0 {
+    True -> observable
+    False ->
+      create(fn() {
+        let Source(next, close) = open(observable)
+        source(skip_step(next, count), close)
+      })
+  }
 }
 
 /// Emit a running accumulator after each input value.
@@ -261,6 +287,20 @@ fn map_step(
       Emit(value, continuation) ->
         Emit(mapper(value), map_step(continuation, mapper))
       Failed(error) -> Failed(error)
+      Complete -> Complete
+    }
+  }
+}
+
+fn map_error_step(
+  next: fn() -> Step(value, a),
+  mapper: fn(a) -> b,
+) -> fn() -> Step(value, b) {
+  fn() {
+    case next() {
+      Emit(value, continuation) ->
+        Emit(value, map_error_step(continuation, mapper))
+      Failed(error) -> Failed(mapper(error))
       Complete -> Complete
     }
   }

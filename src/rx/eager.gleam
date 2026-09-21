@@ -15,6 +15,14 @@ pub fn from_list(values: List(value)) -> Eager(value, error) {
   Eager(Ok(values))
 }
 
+/// Create an eager sequence from a result.
+pub fn from_result(result: Result(value, error)) -> Eager(value, error) {
+  case result {
+    Ok(value) -> of(value)
+    Error(error) -> fail(error)
+  }
+}
+
 /// Create a one-value eager sequence.
 pub fn of(value: value) -> Eager(value, error) {
   from_list([value])
@@ -65,6 +73,17 @@ pub fn map(sequence: Eager(a, error), mapper: fn(a) -> b) -> Eager(b, error) {
   case sequence {
     Eager(Ok(values)) -> Eager(Ok(map_list(values, mapper)))
     Eager(Error(error)) -> Eager(Error(error))
+  }
+}
+
+/// Transform an eager failure without touching successful values.
+pub fn map_error(
+  sequence: Eager(value, a),
+  mapper: fn(a) -> b,
+) -> Eager(value, b) {
+  case sequence {
+    Eager(Ok(values)) -> Eager(Ok(values))
+    Eager(Error(error)) -> Eager(Error(mapper(error)))
   }
 }
 
@@ -124,7 +143,7 @@ pub fn flat_map(
   mapper: fn(a) -> Eager(b, error),
 ) -> Eager(b, error) {
   case sequence {
-    Eager(Ok(values)) -> Eager(flat_map_list(values, mapper))
+    Eager(Ok(values)) -> Eager(flat_map_list(values, mapper, []))
     Eager(Error(error)) -> Eager(Error(error))
   }
 }
@@ -157,9 +176,17 @@ pub fn fold(
 }
 
 fn map_list(values: List(a), mapper: fn(a) -> b) -> List(b) {
+  map_list_loop(values, mapper, []) |> list.reverse
+}
+
+fn map_list_loop(
+  values: List(a),
+  mapper: fn(a) -> b,
+  reversed: List(b),
+) -> List(b) {
   case values {
-    [] -> []
-    [first, ..rest] -> [mapper(first), ..map_list(rest, mapper)]
+    [] -> reversed
+    [first, ..rest] -> map_list_loop(rest, mapper, [mapper(first), ..reversed])
   }
 }
 
@@ -167,25 +194,39 @@ fn filter_list(
   values: List(value),
   predicate: fn(value) -> Bool,
 ) -> List(value) {
+  filter_list_loop(values, predicate, []) |> list.reverse
+}
+
+fn filter_list_loop(
+  values: List(value),
+  predicate: fn(value) -> Bool,
+  reversed: List(value),
+) -> List(value) {
   case values {
-    [] -> []
-    [first, ..rest] -> {
-      let filtered_rest = filter_list(rest, predicate)
+    [] -> reversed
+    [first, ..rest] ->
       case predicate(first) {
-        True -> [first, ..filtered_rest]
-        False -> filtered_rest
+        True -> filter_list_loop(rest, predicate, [first, ..reversed])
+        False -> filter_list_loop(rest, predicate, reversed)
       }
-    }
   }
 }
 
 fn take_list(values: List(value), count: Int) -> List(value) {
+  take_list_loop(values, count, []) |> list.reverse
+}
+
+fn take_list_loop(
+  values: List(value),
+  count: Int,
+  reversed: List(value),
+) -> List(value) {
   case count <= 0 {
-    True -> []
+    True -> reversed
     False ->
       case values {
-        [] -> []
-        [first, ..rest] -> [first, ..take_list(rest, count - 1)]
+        [] -> reversed
+        [first, ..rest] -> take_list_loop(rest, count - 1, [first, ..reversed])
       }
   }
 }
@@ -219,26 +260,34 @@ fn scan_list(
 fn flat_map_list(
   values: List(a),
   mapper: fn(a) -> Eager(b, error),
+  reversed: List(b),
 ) -> Result(List(b), error) {
   case values {
-    [] -> Ok([])
-    [first, ..rest] -> {
+    [] -> Ok(list.reverse(reversed))
+    [first, ..rest] ->
       case mapper(first) {
         Eager(Error(error)) -> Error(error)
         Eager(Ok(mapped)) ->
-          case flat_map_list(rest, mapper) {
-            Error(error) -> Error(error)
-            Ok(tail) -> Ok(append_lists(mapped, tail))
-          }
+          flat_map_list(rest, mapper, prepend_to_reversed(mapped, reversed))
       }
-    }
+  }
+}
+
+fn prepend_to_reversed(values: List(value), reversed: List(value)) -> List(value) {
+  case values {
+    [] -> reversed
+    [first, ..rest] -> prepend_to_reversed(rest, [first, ..reversed])
   }
 }
 
 fn append_lists(first: List(value), second: List(value)) -> List(value) {
-  case first {
-    [] -> second
-    [head, ..tail] -> [head, ..append_lists(tail, second)]
+  prepend_reversed(list.reverse(first), second)
+}
+
+fn prepend_reversed(reversed: List(value), tail: List(value)) -> List(value) {
+  case reversed {
+    [] -> tail
+    [first, ..rest] -> prepend_reversed(rest, [first, ..tail])
   }
 }
 

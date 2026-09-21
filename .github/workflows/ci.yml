@@ -34,5 +34,11 @@ jobs:
       - name: Check ${{ matrix.target }} target
         run: gleam check --target ${{ matrix.target }}
 
+      - name: Build ${{ matrix.target }} target with warnings as errors
+        run: gleam build --target ${{ matrix.target }} --warnings-as-errors
+
       - name: Test ${{ matrix.target }} target
         run: gleam test --target ${{ matrix.target }}
+
+      - name: Build documentation for ${{ matrix.target }} target
+        run: gleam docs build --target ${{ matrix.target }}

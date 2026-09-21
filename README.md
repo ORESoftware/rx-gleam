@@ -11,7 +11,11 @@ The core is intentionally runtime-agnostic and single-process by default. `rx_gl
 - `rx.create` + `rx.source` — low-level escape hatch for custom producers.
 - immutable continuations instead of hidden mutable state.
 - no scheduler abstraction in the core.
-- no required OTP dependency; the implementation is pure Gleam and can target Erlang or JavaScript.
+- no required OTP dependency; the implementation is pure Gleam and targets Erlang and JavaScript.
+- zero/negative `take` and `skip` semantics are explicit and tested.
+- eager large-list transformations use tail-recursive accumulator loops.
+
+See [`HARDENING.md`](HARDENING.md) for the behavioral invariants enforced by CI and the external consumer test.
 
 ## Lazy API
 
@@ -33,6 +37,10 @@ pub fn example() {
 
 Pipeline construction is lazy. `to_list`, `fold`, `drain`, and `subscribe` are terminal operations and start consumption immediately.
 
+`take(0)` and negative `take` values return an empty observable **without opening upstream**. Zero or negative `skip` values are a no-op.
+
+The lazy API includes `from_result` and `map_error` so success and error channels can be composed without throwing exceptions.
+
 ## Eager API
 
 ```gleam
@@ -50,7 +58,7 @@ pub fn example() {
 }
 ```
 
-The eager API is deliberately simple: it is a composable materialized sequence with error propagation. If a caller wants laziness around eager work, wrap it with `eager.defer`.
+The eager API is deliberately simple: it is a composable materialized sequence with typed error propagation. If a caller wants laziness around eager work, wrap it with `eager.defer`.
 
 ```gleam
 let lazy =
@@ -59,6 +67,8 @@ let lazy =
     |> eager.map(transform)
   })
 ```
+
+Large eager transformations are implemented with tail-recursive accumulator loops and are exercised on both BEAM and JavaScript in CI.
 
 ## Bridging eager and lazy
 
@@ -84,8 +94,8 @@ fn make_stream() -> rx.Observable(Message, StreamError) {
   rx.create(fn() {
     rx.source(
       fn() {
-        // This function can receive a BEAM message, call FFI, wait for I/O,
-        // or otherwise obtain the next value however the application wants.
+        // Receive a BEAM message, call FFI, wait for I/O, or obtain the next
+        // value in any other application-controlled way.
         next_message_step()
       },
       fn() {
@@ -108,11 +118,11 @@ rx.Complete
 
 If an application wants a child actor/process, it can create one inside `rx.create` and have the source read from it. If it wants everything in one actor, it can do that too. The library stays neutral.
 
-## Initial operators
+## Operators
 
-Lazy: `map`, `filter`, `tap`, `take`, `skip`, `scan`, `start_with`, `distinct_until_changed_by`, `defer`, `defer_value`, `defer_result`, `subscribe`, `to_list`, `fold`, and `drain`.
+Lazy: `from_list`, `from_result`, `of`, `empty`, `fail`, `defer`, `defer_value`, `defer_result`, `map`, `map_error`, `filter`, `tap`, `take`, `skip`, `scan`, `start_with`, `distinct_until_changed_by`, `subscribe`, `to_list`, `fold`, and `drain`.
 
-Eager: `map`, `filter`, `tap`, `take`, `skip`, `scan`, `flat_map`, `append`, `fold`, and conversion to/from lazy observables.
+Eager: `from_list`, `from_result`, `of`, `empty`, `fail`, `map`, `map_error`, `filter`, `tap`, `take`, `skip`, `scan`, `flat_map`, `append`, `fold`, and conversion to/from lazy observables.
 
 ## Why no `async` keyword?
 
@@ -123,9 +133,14 @@ Gleam does not need an `async` keyword in this API. Asynchrony is a property of 
 ```sh
 gleam deps download
 gleam format --check src test
-gleam test
+gleam check --target erlang
+gleam test --target erlang
+gleam check --target javascript
 gleam test --target javascript
+gleam docs build
 ```
+
+`.zpkg.toml` exposes the canonical repository package metadata and quality-control scripts for zed-pkg consumers.
 
 ## License
 

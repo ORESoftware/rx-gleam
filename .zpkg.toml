@@ -1,0 +1,31 @@
+[package]
+org = "oresoftware"
+name = "rx-gleam"
+version = "0.1.0"
+description = "Composable eager and lazy reactive streams for Gleam"
+license = "MIT"
+keywords = ["gleam", "reactive", "streams", "observable", "rx"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/ORESoftware/rx-gleam"
+
+[install]
+dir = ".vendor/.zed"
+
+[targets.repository]
+dir = "."
+adapter = "none"
+
+[scripts]
+format = "gleam format --check src test"
+check_erlang = "gleam check --target erlang"
+check_javascript = "gleam check --target javascript"
+test_erlang = "gleam test --target erlang"
+test_javascript = "gleam test --target javascript"
+check = "gleam format --check src test && gleam check --target erlang && gleam test --target erlang && gleam check --target javascript && gleam test --target javascript"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = ["build/**", ".vendor/.zed/**", "zed_modules/**", "tmp/**", "temp/**", ".git/**", "**/*.log", ".DS_Store"]
