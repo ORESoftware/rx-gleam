@@ -14,7 +14,8 @@ for required in \
   src/rx/flow.gleam \
   docs/COOKBOOK.md \
   docs/USE_CASES.md \
-  docs/FORMAL_METHODS.md
+  docs/FORMAL_METHODS.md \
+  docs/FULL_STACK_BROWSER.md
 do
   [ -f "$required" ] || {
     echo "[rx-gleam zed-pre-install] missing required file: $required" >&2
