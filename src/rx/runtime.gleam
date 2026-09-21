@@ -4,6 +4,7 @@ import gleam/erlang/reference
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
+import rx/lifecycle
 import rx/protocol
 
 pub opaque type Runtime {
@@ -18,6 +19,11 @@ pub type RuntimeError {
   RegistrationTimeout
 }
 
+pub type RuntimeDiagnostic {
+  ProtocolViolation(protocol.ProtocolError)
+  DuplicateTeardownRegistration
+}
+
 type Entry {
   Entry(
     phase: protocol.Phase,
@@ -28,7 +34,7 @@ type Entry {
 type State {
   State(
     entries: Dict(reference.Reference, Entry),
-    on_protocol_error: fn(protocol.ProtocolError) -> Nil,
+    on_diagnostic: fn(RuntimeDiagnostic) -> Nil,
   )
 }
 
@@ -45,9 +51,9 @@ pub fn start() -> Result(Runtime, actor.StartError) {
 }
 
 pub fn start_checked(
-  on_protocol_error: fn(protocol.ProtocolError) -> Nil,
+  on_diagnostic: fn(RuntimeDiagnostic) -> Nil,
 ) -> Result(Runtime, actor.StartError) {
-  actor.new(State(entries: dict.new(), on_protocol_error:))
+  actor.new(State(entries: dict.new(), on_diagnostic:))
   |> actor.on_message(handle_message)
   |> actor.start
   |> result.map(fn(started) {
@@ -101,7 +107,7 @@ pub fn stop(runtime: Runtime) -> Nil {
 }
 
 fn handle_message(state: State, message: Message) -> actor.Next(State, Message) {
-  let State(entries:, on_protocol_error:) = state
+  let State(entries:, on_diagnostic:) = state
 
   case message {
     Register(id, reply_to) -> {
@@ -112,86 +118,134 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
           id,
           Entry(phase: protocol.Open, teardown: None),
         ),
-        on_protocol_error:,
+        on_diagnostic:,
       ))
     }
 
-    SetTeardown(id, teardown) ->
-      case dict.get(entries, id) {
-        Error(_) -> {
-          teardown()
-          actor.continue(state)
-        }
-        Ok(Entry(phase: protocol.Terminated, teardown: _)) -> {
-          teardown()
-          actor.continue(State(
-            entries: dict.delete(entries, id),
-            on_protocol_error:,
-          ))
-        }
-        Ok(Entry(phase: protocol.Open, teardown: _)) ->
-          actor.continue(State(
-            entries: dict.insert(
-              entries,
-              id,
-              Entry(phase: protocol.Open, teardown: Some(teardown)),
-            ),
-            on_protocol_error:,
-          ))
+    SetTeardown(id, incoming) -> {
+      let current = dict.get(entries, id)
+      let model_state = case current {
+        Error(_) -> lifecycle.Closed
+        Ok(entry) -> lifecycle_state(entry)
       }
+      let #(next_state, commands) =
+        lifecycle.transition(model_state, lifecycle.InstallTeardown)
+      let stored = case current {
+        Ok(Entry(phase: _, teardown: teardown)) -> teardown
+        Error(_) -> None
+      }
+
+      run_commands(
+        commands,
+        fn() { Nil },
+        stored,
+        Some(incoming),
+        on_diagnostic,
+      )
+
+      actor.continue(State(
+        entries: update_entry(entries, id, next_state, stored, Some(incoming)),
+        on_diagnostic:,
+      ))
+    }
 
     Notify(id, kind, work) ->
       case dict.get(entries, id) {
         Error(_) -> actor.continue(state)
-        Ok(Entry(phase, teardown)) ->
-          case protocol.transition(phase, kind) {
-            Error(reason) -> {
-              on_protocol_error(reason)
-              actor.continue(state)
-            }
-            Ok(protocol.Open) -> {
-              work()
-              actor.continue(state)
-            }
-            Ok(protocol.Terminated) -> {
-              work()
-              case teardown {
-                Some(release) -> {
-                  release()
-                  actor.continue(State(
-                    entries: dict.delete(entries, id),
-                    on_protocol_error:,
-                  ))
-                }
-                None ->
-                  actor.continue(State(
-                    entries: dict.insert(
-                      entries,
-                      id,
-                      Entry(phase: protocol.Terminated, teardown: None),
-                    ),
-                    on_protocol_error:,
-                  ))
-              }
-            }
-          }
+        Ok(entry) -> {
+          let Entry(phase: _, teardown: stored) = entry
+          let #(next_state, commands) =
+            lifecycle.transition(lifecycle_state(entry), lifecycle.Notify(kind))
+
+          run_commands(commands, work, stored, None, on_diagnostic)
+
+          actor.continue(State(
+            entries: update_entry(entries, id, next_state, stored, None),
+            on_diagnostic:,
+          ))
+        }
       }
 
     Cancel(id) ->
       case dict.get(entries, id) {
         Error(_) -> actor.continue(state)
-        Ok(Entry(phase: _, teardown: teardown)) -> {
-          case teardown {
-            Some(release) -> release()
-            None -> Nil
-          }
+        Ok(entry) -> {
+          let Entry(phase: _, teardown: stored) = entry
+          let #(next_state, commands) =
+            lifecycle.transition(lifecycle_state(entry), lifecycle.Cancel)
+
+          run_commands(commands, fn() { Nil }, stored, None, on_diagnostic)
+
           actor.continue(State(
-            entries: dict.delete(entries, id),
-            on_protocol_error:,
+            entries: update_entry(entries, id, next_state, stored, None),
+            on_diagnostic:,
           ))
         }
       }
 
     Stop -> actor.stop()
+  }
+}
+
+fn lifecycle_state(entry: Entry) -> lifecycle.State {
+  let Entry(phase:, teardown:) = entry
+  lifecycle.Active(
+    phase: phase,
+    teardown_ready: case teardown {
+      Some(_) -> True
+      None -> False
+    },
+  )
+}
+
+fn update_entry(
+  entries: Dict(reference.Reference, Entry),
+  id: reference.Reference,
+  next_state: lifecycle.State,
+  stored: Option(fn() -> Nil),
+  incoming: Option(fn() -> Nil),
+) -> Dict(reference.Reference, Entry) {
+  case next_state {
+    lifecycle.Closed -> dict.delete(entries, id)
+    lifecycle.Active(phase:, teardown_ready:) -> {
+      let teardown = case teardown_ready, stored, incoming {
+        False, _, _ -> None
+        True, Some(existing), _ -> Some(existing)
+        True, None, Some(new_teardown) -> Some(new_teardown)
+        True, None, None -> None
+      }
+      dict.insert(entries, id, Entry(phase:, teardown:))
+    }
+  }
+}
+
+fn run_commands(
+  commands: List(lifecycle.Command),
+  deliver: fn() -> Nil,
+  stored: Option(fn() -> Nil),
+  incoming: Option(fn() -> Nil),
+  on_diagnostic: fn(RuntimeDiagnostic) -> Nil,
+) -> Nil {
+  case commands {
+    [] -> Nil
+    [command, ..rest] -> {
+      case command {
+        lifecycle.Deliver -> deliver()
+        lifecycle.RunStoredTeardown -> run_optional(stored)
+        lifecycle.RunIncomingTeardown -> run_optional(incoming)
+        lifecycle.ReportProtocolError(reason) ->
+          on_diagnostic(ProtocolViolation(reason))
+        lifecycle.ReportDuplicateTeardown ->
+          on_diagnostic(DuplicateTeardownRegistration)
+      }
+      run_commands(rest, deliver, stored, incoming, on_diagnostic)
+    }
+  }
+}
+
+fn run_optional(callback: Option(fn() -> Nil)) -> Nil {
+  case callback {
+    Some(run) -> run()
+    None -> Nil
   }
 }
