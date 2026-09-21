@@ -10,6 +10,11 @@ fail() {
   exit 1
 }
 
+case "$mode" in
+  --quick|--full) ;;
+  *) fail "unknown mode: $mode (expected --quick or --full)" ;;
+esac
+
 command -v gleam >/dev/null 2>&1 || fail "gleam is required"
 
 gleam format --check src test
@@ -26,6 +31,7 @@ for required in \
   src/rx/flow.gleam \
   src/rx/flow_model.gleam \
   test/cookbook_test.gleam \
+  test/use_cases_test.gleam \
   formal/RxProtocol.tla \
   formal/RxProtocol.cfg \
   formal/RxAsyncFlow.tla \
@@ -43,17 +49,30 @@ grep -q 'Terminated, CompleteKind' src/rx/protocol.gleam || fail "protocol termi
 grep -q 'Terminated, ErrorKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
 grep -q 'Terminated, NextKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
 
-# The runtime must remain one serialized actor, not spawn per operator.
+# The runtime must remain one serialized actor. Library source must not hide
+# workers or blocking receives behind operators/Futures.
 actor_count=$(grep -R 'actor\.new' src --include='*.gleam' | wc -l | tr -d ' ')
 [ "$actor_count" = "1" ] || fail "expected exactly one actor.new in src, found $actor_count"
+if grep -R -n 'process\.spawn\|process\.spawn_unlinked' src --include='*.gleam'; then
+  fail "library source must not spawn hidden worker processes"
+fi
+if grep -R -n 'process\.receive' src --include='*.gleam'; then
+  fail "library source must not block on process.receive"
+fi
+
+grep -q 'RuntimeStopped' src/rx/runtime.gleam || fail "runtime must expose typed stopped-runtime registration failure"
+grep -q 'cancel_all_entries(state.entries)' src/rx/runtime.gleam || fail "runtime stop must tear down active subscriptions"
 
 # The cookbook is an executable 20-recipe contract.
 recipe_count=$(grep -c '^pub fn cookbook_[0-9][0-9]_.*_test()' test/cookbook_test.gleam)
 [ "$recipe_count" = "20" ] || fail "expected exactly 20 cookbook tests, found $recipe_count"
 
-# The server-side use-cases guide is also intentionally a 20-case contract.
+# The server-side use-cases guide is intentionally a 20-case contract, with the
+# five anchor cases backed by integration tests.
 use_case_count=$(grep -Ec '^## [0-9]+\. ' docs/USE_CASES.md)
 [ "$use_case_count" = "20" ] || fail "expected exactly 20 server-side use cases, found $use_case_count"
+use_case_test_count=$(grep -c '^pub fn use_case_0[1-5]_.*_test()' test/use_cases_test.gleam)
+[ "$use_case_test_count" = "5" ] || fail "expected exactly 5 anchor use-case tests, found $use_case_test_count"
 
 grep -q '^## 1\. Async queue with an async processing step$' docs/USE_CASES.md || fail "missing async queue use case"
 grep -q '^## 2\. De-duplicating requests or stream items with an in-memory set$' docs/USE_CASES.md || fail "missing de-duplication use case"
@@ -65,16 +84,13 @@ if [ "$mode" = "--full" ]; then
   command -v git >/dev/null 2>&1 || fail "git is required for full conformance"
   [ -f .githooks/pre-commit ] || fail "missing pre-commit hook"
   [ -f .githooks/pre-push ] || fail "missing pre-push hook"
+  [ -n "${TLA2TOOLS_JAR:-}" ] || fail "full conformance requires TLA2TOOLS_JAR"
+  [ -f "$TLA2TOOLS_JAR" ] || fail "TLA2TOOLS_JAR does not name a file: $TLA2TOOLS_JAR"
+  command -v java >/dev/null 2>&1 || fail "java is required for full conformance"
 
-  # Run all TLA+ models when available; lack of Java/TLC is not silently proof.
-  if [ -n "${TLA2TOOLS_JAR:-}" ]; then
-    command -v java >/dev/null 2>&1 || fail "TLA2TOOLS_JAR is set but java is unavailable"
-    java -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxProtocol.cfg formal/RxProtocol.tla
-    java -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowOrdered.cfg formal/RxAsyncFlow.tla
-    java -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowCompletion.cfg formal/RxAsyncFlow.tla
-  else
-    echo "[rx-gleam conformance] TLC not run: set TLA2TOOLS_JAR to enable model checking" >&2
-  fi
+  java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxProtocol.cfg formal/RxProtocol.tla
+  java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowOrdered.cfg formal/RxAsyncFlow.tla
+  java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowCompletion.cfg formal/RxAsyncFlow.tla
 fi
 
 echo "[rx-gleam conformance] PASS ($mode)"
