@@ -3,6 +3,7 @@ version = "0.1.0"
 description = "Serialized single-actor Reactive Extensions for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "ORESoftware", repo = "rx-gleam" }
+gleam = ">= 1.15.4"
 
 [dependencies]
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
