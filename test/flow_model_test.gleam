@@ -101,7 +101,7 @@ fn explore_events(
     [] -> Nil
     [event, ..rest] -> {
       let #(next, _) = model.transition(state, event)
-      explore(next, remaining - 1)
+      let _ = explore(next, remaining - 1)
       explore_events(state, rest, remaining)
     }
   }
