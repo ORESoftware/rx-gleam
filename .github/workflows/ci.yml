@@ -26,12 +26,18 @@ jobs:
           otp-version: '28'
           gleam-version: '1.18.0'
           rebar3-version: '3'
-      - name: Format
+      - name: Normalize formatting for compiler feedback
         if: steps.package.outputs.present == 'true'
-        run: gleam format --check src test
+        run: gleam format src test
+      - name: Show formatting diff
+        if: steps.package.outputs.present == 'true'
+        run: git diff -- src test
       - name: Test
         if: steps.package.outputs.present == 'true'
         run: gleam test
       - name: Structural conformance
         if: steps.package.outputs.present == 'true'
         run: sh conformance/check.sh --quick
+      - name: Verify formatting is committed
+        if: steps.package.outputs.present == 'true'
+        run: git diff --exit-code -- src test
