@@ -33,9 +33,8 @@ pub fn concat_map_accepts_async_input_while_work_is_running_test() {
   let assert Ok(runtime_) = runtime.start()
 
   let source = controlled_async_source(ready)
-  let mapped = flow.concat_map(source, fn(value) {
-    controlled_future(value, workers)
-  })
+  let mapped =
+    flow.concat_map(source, fn(value) { controlled_future(value, workers) })
 
   let assert Ok(subscription) =
     rx.subscribe(mapped, runtime_, output_observer(outputs))
@@ -79,10 +78,7 @@ pub fn merge_map_bounds_concurrency_and_emits_completion_order_test() {
 
   let mapped =
     controlled_async_source(ready)
-    |> flow.merge_map(
-      fn(value) { controlled_future(value, workers) },
-      2,
-    )
+    |> flow.merge_map(fn(value) { controlled_future(value, workers) }, 2)
 
   let assert Ok(subscription) =
     rx.subscribe(mapped, runtime_, output_observer(outputs))
@@ -124,10 +120,7 @@ pub fn ordered_async_map_processes_concurrently_but_emits_fifo_test() {
 
   let mapped =
     controlled_async_source(ready)
-    |> flow.map_ordered(
-      fn(value) { controlled_future(value, workers) },
-      2,
-    )
+    |> flow.map_ordered(fn(value) { controlled_future(value, workers) }, 2)
 
   let assert Ok(subscription) =
     rx.subscribe(mapped, runtime_, output_observer(outputs))
@@ -163,10 +156,7 @@ pub fn projected_error_is_fail_fast_and_late_success_is_ignored_test() {
 
   let mapped =
     controlled_async_source(ready)
-    |> flow.merge_map(
-      fn(value) { controlled_future(value, workers) },
-      2,
-    )
+    |> flow.merge_map(fn(value) { controlled_future(value, workers) }, 2)
 
   let assert Ok(subscription) =
     rx.subscribe(mapped, runtime_, output_observer(outputs))
@@ -198,11 +188,12 @@ fn controlled_async_source(
   ready: process.Subject(process.Subject(SourceCommand)),
 ) -> rx.Observable(Int, String) {
   rx.create(fn(emitter) {
-    let pid = process.spawn_unlinked(fn() {
-      let commands = process.new_subject()
-      process.send(ready, commands)
-      source_loop(commands, emitter)
-    })
+    let pid =
+      process.spawn_unlinked(fn() {
+        let commands = process.new_subject()
+        process.send(ready, commands)
+        source_loop(commands, emitter)
+      })
 
     fn() { process.kill(pid) }
   })
@@ -228,21 +219,24 @@ fn controlled_future(
   workers: process.Subject(WorkerEvent),
 ) -> future.Future(Int, String) {
   future.new(fn(resolve) {
-    let pid = process.spawn_unlinked(fn() {
-      let gate = process.new_subject()
-      process.send(workers, WorkerStarted(value, gate))
+    let pid =
+      process.spawn_unlinked(fn() {
+        let gate = process.new_subject()
+        process.send(workers, WorkerStarted(value, gate))
 
-      case process.receive(from: gate, within: 5000) {
-        Ok(result) -> resolve(result)
-        Error(Nil) -> resolve(Error("worker gate timeout"))
-      }
-    })
+        case process.receive(from: gate, within: 5000) {
+          Ok(result) -> resolve(result)
+          Error(Nil) -> resolve(Error("worker gate timeout"))
+        }
+      })
 
     fn() { process.kill(pid) }
   })
 }
 
-fn output_observer(outputs: process.Subject(OutputEvent)) -> rx.Observer(Int, String) {
+fn output_observer(
+  outputs: process.Subject(OutputEvent),
+) -> rx.Observer(Int, String) {
   rx.observer(
     fn(value) { process.send(outputs, Value(value)) },
     fn(reason) { process.send(outputs, Failed(reason)) },

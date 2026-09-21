@@ -46,10 +46,7 @@ pub type RuntimeDiagnostic {
 }
 
 type Entry {
-  Entry(
-    phase: protocol.Phase,
-    teardown: Option(fn() -> Nil),
-  )
+  Entry(phase: protocol.Phase, teardown: Option(fn() -> Nil))
 }
 
 type Fifo(item) {
@@ -57,24 +54,15 @@ type Fifo(item) {
 }
 
 type PendingWork {
-  PendingWork(
-    sequence: Int,
-    start: fn(Int) -> fn() -> Nil,
-  )
+  PendingWork(sequence: Int, start: fn(Int) -> fn() -> Nil)
 }
 
 type ActiveWork {
-  ActiveWork(
-    sequence: Int,
-    cancel: fn() -> Nil,
-  )
+  ActiveWork(sequence: Int, cancel: fn() -> Nil)
 }
 
 type CompletedWork {
-  CompletedWork(
-    sequence: Int,
-    deliver: fn() -> Nil,
-  )
+  CompletedWork(sequence: Int, deliver: fn() -> Nil)
 }
 
 type FlowEntry {
@@ -113,12 +101,7 @@ type Message {
     process.Subject(Nil),
   )
   EnqueueFlow(reference.Reference, fn(Int) -> fn() -> Nil)
-  CompleteFlow(
-    reference.Reference,
-    Int,
-    FlowCompletion,
-    fn() -> Nil,
-  )
+  CompleteFlow(reference.Reference, Int, FlowCompletion, fn() -> Nil)
   FinishFlowInput(reference.Reference)
   FailFlowInput(reference.Reference, fn() -> Nil)
   CancelFlow(reference.Reference)
@@ -147,7 +130,7 @@ pub fn register(runtime: Runtime) -> Result(SubscriptionKey, RuntimeError) {
   let reply_to = process.new_subject()
   process.send(subject, Register(id, reply_to))
 
-  case process.receive(from: reply_to, within: 5_000) {
+  case process.receive(from: reply_to, within: 5000) {
     Ok(Nil) -> Ok(SubscriptionKey(id))
     Error(Nil) -> Error(RegistrationTimeout)
   }
@@ -197,9 +180,12 @@ pub fn register_flow(
       let Runtime(subject) = runtime
       let id = reference.new()
       let reply_to = process.new_subject()
-      process.send(subject, RegisterFlow(id, concurrency, order, on_drain, reply_to))
+      process.send(
+        subject,
+        RegisterFlow(id, concurrency, order, on_drain, reply_to),
+      )
 
-      case process.receive(from: reply_to, within: 5_000) {
+      case process.receive(from: reply_to, within: 5000) {
         Ok(Nil) -> Ok(FlowKey(id))
         Error(Nil) -> Error(RegistrationTimeout)
       }
@@ -267,18 +253,23 @@ pub fn stop(runtime: Runtime) -> Nil {
   process.send(subject, Stop)
 }
 
-fn handle_message(state: State, message: Message) -> actor.Next(State, Message) {
+fn handle_message(
+  state: State,
+  message: Message,
+) -> actor.Next(State, Message) {
   case message {
     Register(id, reply_to) -> {
       process.send(reply_to, Nil)
-      actor.continue(State(
-        ..state,
-        entries: dict.insert(
-          state.entries,
-          id,
-          Entry(phase: protocol.Open, teardown: None),
+      actor.continue(
+        State(
+          ..state,
+          entries: dict.insert(
+            state.entries,
+            id,
+            Entry(phase: protocol.Open, teardown: None),
+          ),
         ),
-      ))
+      )
     }
 
     SetTeardown(id, incoming) -> {
@@ -302,16 +293,18 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         state.on_diagnostic,
       )
 
-      actor.continue(State(
-        ..state,
-        entries: update_entry(
-          state.entries,
-          id,
-          next_state,
-          stored,
-          Some(incoming),
+      actor.continue(
+        State(
+          ..state,
+          entries: update_entry(
+            state.entries,
+            id,
+            next_state,
+            stored,
+            Some(incoming),
+          ),
         ),
-      ))
+      )
     }
 
     Notify(id, kind, work) ->
@@ -324,16 +317,12 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
 
           run_commands(commands, work, stored, None, state.on_diagnostic)
 
-          actor.continue(State(
-            ..state,
-            entries: update_entry(
-              state.entries,
-              id,
-              next_state,
-              stored,
-              None,
+          actor.continue(
+            State(
+              ..state,
+              entries: update_entry(state.entries, id, next_state, stored, None),
             ),
-          ))
+          )
         }
       }
 
@@ -345,42 +334,46 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
           let #(next_state, commands) =
             lifecycle.transition(lifecycle_state(entry), lifecycle.Cancel)
 
-          run_commands(commands, fn() { Nil }, stored, None, state.on_diagnostic)
+          run_commands(
+            commands,
+            fn() { Nil },
+            stored,
+            None,
+            state.on_diagnostic,
+          )
 
-          actor.continue(State(
-            ..state,
-            entries: update_entry(
-              state.entries,
-              id,
-              next_state,
-              stored,
-              None,
+          actor.continue(
+            State(
+              ..state,
+              entries: update_entry(state.entries, id, next_state, stored, None),
             ),
-          ))
+          )
         }
       }
 
     RegisterFlow(id, concurrency, order, on_drain, reply_to) -> {
       process.send(reply_to, Nil)
-      actor.continue(State(
-        ..state,
-        flows: dict.insert(
-          state.flows,
-          id,
-          FlowEntry(
-            concurrency:,
-            order:,
-            next_sequence: 0,
-            next_emit: 0,
-            pending: fifo_new(),
-            active: [],
-            active_count: 0,
-            completed: [],
-            input_done: False,
-            on_drain:,
+      actor.continue(
+        State(
+          ..state,
+          flows: dict.insert(
+            state.flows,
+            id,
+            FlowEntry(
+              concurrency:,
+              order:,
+              next_sequence: 0,
+              next_emit: 0,
+              pending: fifo_new(),
+              active: [],
+              active_count: 0,
+              completed: [],
+              input_done: False,
+              on_drain:,
+            ),
           ),
         ),
-      ))
+      )
     }
 
     EnqueueFlow(id, start_work) ->
@@ -388,19 +381,19 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         Error(_) -> actor.continue(state)
         Ok(flow) -> {
           let sequence = flow.next_sequence
-          let queued = FlowEntry(
-            ..flow,
-            next_sequence: sequence + 1,
-            pending: fifo_push(
-              flow.pending,
-              PendingWork(sequence:, start: start_work),
-            ),
-          )
+          let queued =
+            FlowEntry(
+              ..flow,
+              next_sequence: sequence + 1,
+              pending: fifo_push(
+                flow.pending,
+                PendingWork(sequence:, start: start_work),
+              ),
+            )
           let running = fill_slots(queued)
-          actor.continue(State(
-            ..state,
-            flows: dict.insert(state.flows, id, running),
-          ))
+          actor.continue(
+            State(..state, flows: dict.insert(state.flows, id, running)),
+          )
         }
       }
 
@@ -411,20 +404,20 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
           case remove_active(flow.active, sequence) {
             #(False, _) -> actor.continue(state)
             #(True, remaining_active) -> {
-              let without_active = FlowEntry(
-                ..flow,
-                active: remaining_active,
-                active_count: flow.active_count - 1,
-              )
+              let without_active =
+                FlowEntry(
+                  ..flow,
+                  active: remaining_active,
+                  active_count: flow.active_count - 1,
+                )
 
               case completion {
                 FlowFailure -> {
                   deliver()
                   cancel_active(remaining_active)
-                  actor.continue(State(
-                    ..state,
-                    flows: dict.delete(state.flows, id),
-                  ))
+                  actor.continue(
+                    State(..state, flows: dict.delete(state.flows, id)),
+                  )
                 }
                 FlowSuccess -> {
                   let emitted = case flow.order {
@@ -433,13 +426,12 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
                       without_active
                     }
                     InputOrder ->
-                      flush_ordered(FlowEntry(
-                        ..without_active,
-                        completed: [
+                      flush_ordered(
+                        FlowEntry(..without_active, completed: [
                           CompletedWork(sequence:, deliver:),
                           ..without_active.completed
-                        ],
-                      ))
+                        ]),
+                      )
                   }
                   let refilled = fill_slots(emitted)
                   continue_flow(state, id, refilled)
@@ -452,7 +444,8 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
     FinishFlowInput(id) ->
       case dict.get(state.flows, id) {
         Error(_) -> actor.continue(state)
-        Ok(flow) -> continue_flow(state, id, FlowEntry(..flow, input_done: True))
+        Ok(flow) ->
+          continue_flow(state, id, FlowEntry(..flow, input_done: True))
       }
 
     FailFlowInput(id, deliver_error) ->
@@ -461,10 +454,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         Ok(flow) -> {
           deliver_error()
           cancel_active(flow.active)
-          actor.continue(State(
-            ..state,
-            flows: dict.delete(state.flows, id),
-          ))
+          actor.continue(State(..state, flows: dict.delete(state.flows, id)))
         }
       }
 
@@ -473,10 +463,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         Error(_) -> actor.continue(state)
         Ok(flow) -> {
           cancel_active(flow.active)
-          actor.continue(State(
-            ..state,
-            flows: dict.delete(state.flows, id),
-          ))
+          actor.continue(State(..state, flows: dict.delete(state.flows, id)))
         }
       }
 
@@ -495,16 +482,10 @@ fn continue_flow(
   case flow_is_drained(flow) {
     True -> {
       flow.on_drain()
-      actor.continue(State(
-        ..state,
-        flows: dict.delete(state.flows, id),
-      ))
+      actor.continue(State(..state, flows: dict.delete(state.flows, id)))
     }
     False ->
-      actor.continue(State(
-        ..state,
-        flows: dict.insert(state.flows, id, flow),
-      ))
+      actor.continue(State(..state, flows: dict.insert(state.flows, id, flow)))
   }
 }
 
@@ -516,15 +497,17 @@ fn fill_slots(flow: FlowEntry) -> FlowEntry {
         Error(_) -> flow
         Ok(#(PendingWork(sequence:, start: start_work), remaining)) -> {
           let cancel_work = start_work(sequence)
-          fill_slots(FlowEntry(
-            ..flow,
-            pending: remaining,
-            active: [
-              ActiveWork(sequence:, cancel: cancel_work),
-              ..flow.active
-            ],
-            active_count: flow.active_count + 1,
-          ))
+          fill_slots(
+            FlowEntry(
+              ..flow,
+              pending: remaining,
+              active: [
+                ActiveWork(sequence:, cancel: cancel_work),
+                ..flow.active
+              ],
+              active_count: flow.active_count + 1,
+            ),
+          )
         }
       }
   }
@@ -535,20 +518,18 @@ fn flush_ordered(flow: FlowEntry) -> FlowEntry {
     Error(_) -> flow
     Ok(#(deliver, remaining)) -> {
       deliver()
-      flush_ordered(FlowEntry(
-        ..flow,
-        next_emit: flow.next_emit + 1,
-        completed: remaining,
-      ))
+      flush_ordered(
+        FlowEntry(..flow, next_emit: flow.next_emit + 1, completed: remaining),
+      )
     }
   }
 }
 
 fn flow_is_drained(flow: FlowEntry) -> Bool {
   flow.input_done
-    && flow.active_count == 0
-    && fifo_is_empty(flow.pending)
-    && list_is_empty(flow.completed)
+  && flow.active_count == 0
+  && fifo_is_empty(flow.pending)
+  && list_is_empty(flow.completed)
 }
 
 fn remove_active(
@@ -580,8 +561,7 @@ fn take_completed(
         False ->
           case take_completed(rest, sequence) {
             Error(_) -> Error(Nil)
-            Ok(#(deliver, remaining)) ->
-              Ok(#(deliver, [item, ..remaining]))
+            Ok(#(deliver, remaining)) -> Ok(#(deliver, [item, ..remaining]))
           }
       }
   }
@@ -615,8 +595,7 @@ fn fifo_pop(fifo: Fifo(item)) -> Result(#(item, Fifo(item)), Nil) {
     [] ->
       case list.reverse(fifo.back) {
         [] -> Error(Nil)
-        [first, ..rest] ->
-          Ok(#(first, Fifo(front: rest, back: [])))
+        [first, ..rest] -> Ok(#(first, Fifo(front: rest, back: [])))
       }
   }
 }
@@ -637,13 +616,10 @@ fn list_is_empty(items: List(item)) -> Bool {
 
 fn lifecycle_state(entry: Entry) -> lifecycle.State {
   let Entry(phase:, teardown:) = entry
-  lifecycle.Active(
-    phase: phase,
-    teardown_ready: case teardown {
-      Some(_) -> True
-      None -> False
-    },
-  )
+  lifecycle.Active(phase: phase, teardown_ready: case teardown {
+    Some(_) -> True
+    None -> False
+  })
 }
 
 fn update_entry(

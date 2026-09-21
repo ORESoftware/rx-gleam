@@ -136,7 +136,8 @@ pub fn cookbook_12_future_map_test() {
 pub fn cookbook_13_future_await_continuation_test() {
   let results = process.new_subject()
   let value: future.Future(Int, String) = future.pure(8)
-  let _cancel = future.await(value, fn(result) { process.send(results, result) })
+  let _cancel =
+    future.await(value, fn(result) { process.send(results, result) })
 
   process.receive(from: results, within: 1000)
   |> should.equal(Ok(Ok(8)))
@@ -178,7 +179,9 @@ pub fn cookbook_16_concat_map_is_fifo_test() {
   let assert Ok(runtime_) = runtime.start()
   let source: rx.Observable(Int, String) =
     rx.from_list([1, 2, 3])
-    |> flow.concat_map(fn(value) { controlled_future(value, work, process.new_subject()) })
+    |> flow.concat_map(fn(value) {
+      controlled_future(value, work, process.new_subject())
+    })
   let assert Ok(subscription) =
     rx.subscribe(source, runtime_, output_observer(outputs))
 
@@ -211,7 +214,10 @@ pub fn cookbook_17_merge_map_bounds_concurrency_test() {
   let assert Ok(runtime_) = runtime.start()
   let source: rx.Observable(Int, String) =
     rx.from_list([1, 2, 3])
-    |> flow.merge_map(fn(value) { controlled_future(value, work, cancelled) }, 2)
+    |> flow.merge_map(
+      fn(value) { controlled_future(value, work, cancelled) },
+      2,
+    )
   let assert Ok(subscription) =
     rx.subscribe(source, runtime_, output_observer(outputs))
 
@@ -243,7 +249,10 @@ pub fn cookbook_18_map_ordered_buffers_early_results_test() {
   let assert Ok(runtime_) = runtime.start()
   let source: rx.Observable(Int, String) =
     rx.from_list([1, 2])
-    |> flow.map_ordered(fn(value) { controlled_future(value, work, cancelled) }, 2)
+    |> flow.map_ordered(
+      fn(value) { controlled_future(value, work, cancelled) },
+      2,
+    )
   let assert Ok(subscription) =
     rx.subscribe(source, runtime_, output_observer(outputs))
 
@@ -281,7 +290,10 @@ pub fn cookbook_20_fail_fast_cancels_and_ignores_late_result_test() {
   let assert Ok(runtime_) = runtime.start()
   let source: rx.Observable(Int, String) =
     rx.from_list([1, 2, 3])
-    |> flow.merge_map(fn(value) { controlled_future(value, work, cancelled) }, 2)
+    |> flow.merge_map(
+      fn(value) { controlled_future(value, work, cancelled) },
+      2,
+    )
   let assert Ok(subscription) =
     rx.subscribe(source, runtime_, output_observer(outputs))
 
@@ -341,7 +353,9 @@ fn expect_outputs(
   }
 }
 
-fn output_observer(outputs: process.Subject(OutputEvent)) -> rx.Observer(Int, String) {
+fn output_observer(
+  outputs: process.Subject(OutputEvent),
+) -> rx.Observer(Int, String) {
   rx.observer(
     fn(value) { process.send(outputs, Value(value)) },
     fn(reason) { process.send(outputs, Failed(reason)) },

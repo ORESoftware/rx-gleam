@@ -105,12 +105,11 @@ fn map_concurrent(
   order: runtime.FlowOrder,
 ) -> rx.Observable(output, error) {
   rx.create_checked(fn(runtime_, emitter) {
-    case runtime.register_flow(
-      runtime_,
-      concurrency,
-      order,
-      fn() { rx.complete(emitter) },
-    ) {
+    case
+      runtime.register_flow(runtime_, concurrency, order, fn() {
+        rx.complete(emitter)
+      })
+    {
       Error(reason) -> Error(reason)
       Ok(flow_key) -> {
         let upstream =
@@ -143,11 +142,9 @@ fn map_concurrent(
                 })
               },
               fn(reason) {
-                runtime.fail_flow_input(
-                  runtime_,
-                  flow_key,
-                  fn() { rx.error(emitter, reason) },
-                )
+                runtime.fail_flow_input(runtime_, flow_key, fn() {
+                  rx.error(emitter, reason)
+                })
               },
               fn() { runtime.finish_flow_input(runtime_, flow_key) },
             ),

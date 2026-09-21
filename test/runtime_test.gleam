@@ -48,13 +48,13 @@ pub fn runtime_rejects_post_terminal_notifications_test() {
       ),
     )
 
-  process.receive(from: events, within: 1_000)
+  process.receive(from: events, within: 1000)
   |> should.equal(Ok(Value(1)))
-  process.receive(from: events, within: 1_000)
+  process.receive(from: events, within: 1000)
   |> should.equal(Ok(Completed))
-  process.receive(from: events, within: 1_000)
+  process.receive(from: events, within: 1000)
   |> should.equal(Ok(ProtocolViolation(protocol.NotificationAfterTermination)))
-  process.receive(from: events, within: 1_000)
+  process.receive(from: events, within: 1000)
   |> should.equal(Ok(TornDown))
 
   runtime.stop(runtime_)
@@ -65,9 +65,7 @@ pub fn cancellation_is_idempotent_and_teardown_runs_once_test() {
   let assert Ok(runtime_) = runtime.start()
 
   let source: rx.Observable(Int, String) =
-    rx.create(fn(_) {
-      fn() { process.send(events, TornDown) }
-    })
+    rx.create(fn(_) { fn() { process.send(events, TornDown) } })
 
   let assert Ok(subscription) =
     rx.subscribe(
@@ -79,7 +77,7 @@ pub fn cancellation_is_idempotent_and_teardown_runs_once_test() {
   rx.unsubscribe(subscription)
   rx.unsubscribe(subscription)
 
-  process.receive(from: events, within: 1_000)
+  process.receive(from: events, within: 1000)
   |> should.equal(Ok(TornDown))
   process.receive(from: events, within: 20)
   |> should.equal(Error(Nil))

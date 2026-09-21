@@ -112,9 +112,7 @@ fn trace_is_safe(
         lifecycle.Closed -> next_state == lifecycle.Closed
         lifecycle.Active(..) -> True
       }
-      absorbing
-        && next_runs <= 1
-        && trace_is_safe(rest, next_state, next_runs)
+      absorbing && next_runs <= 1 && trace_is_safe(rest, next_state, next_runs)
     }
   }
 }

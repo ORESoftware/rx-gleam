@@ -10,10 +10,7 @@ pub type Observer(value, error) {
 }
 
 pub opaque type Subscription {
-  Subscription(
-    runtime_: Runtime,
-    key: runtime.SubscriptionKey,
-  )
+  Subscription(runtime_: Runtime, key: runtime.SubscriptionKey)
 }
 
 pub opaque type Observable(value, error) {
@@ -65,14 +62,12 @@ pub fn create_checked(
     case runtime.register(runtime_) {
       Error(reason) -> Error(reason)
       Ok(key) -> {
-        let emitter = Emitter(fn(notification) {
-          runtime.dispatch(
-            runtime_,
-            key,
-            protocol.kind(notification),
-            fn() { notify(observer_, notification) },
-          )
-        })
+        let emitter =
+          Emitter(fn(notification) {
+            runtime.dispatch(runtime_, key, protocol.kind(notification), fn() {
+              notify(observer_, notification)
+            })
+          })
 
         case producer(runtime_, emitter) {
           Error(reason) -> {

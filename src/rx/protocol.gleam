@@ -28,10 +28,7 @@ pub fn kind(notification: Notification(value, error)) -> Kind {
   }
 }
 
-pub fn transition(
-  phase: Phase,
-  event: Kind,
-) -> Result(Phase, ProtocolError) {
+pub fn transition(phase: Phase, event: Kind) -> Result(Phase, ProtocolError) {
   case phase, event {
     Open, NextKind -> Ok(Open)
     Open, ErrorKind -> Ok(Terminated)

@@ -64,7 +64,9 @@ pub fn map(
   Future(effect.map(effect_, transform))
 }
 
-pub fn from_effect(effect_: effect.Effect(value, error)) -> Future(value, error) {
+pub fn from_effect(
+  effect_: effect.Effect(value, error),
+) -> Future(value, error) {
   Future(effect_)
 }
 
