@@ -7,5 +7,9 @@ if [ -z "$zed_bin" ]; then
   echo "[rx-gleam pre-push] zed not found; refusing to bypass package validation" >&2
   exit 1
 fi
+if [ -z "${TLA2TOOLS_JAR:-}" ] || [ ! -f "$TLA2TOOLS_JAR" ]; then
+  echo "[rx-gleam pre-push] TLA2TOOLS_JAR must point to tla2tools.jar for the full formal gate" >&2
+  exit 1
+fi
 if [ -f .zpkg.lock ]; then "$zed_bin" validate --require-lock; else "$zed_bin" validate; fi
 sh ./conformance/check.sh --full
