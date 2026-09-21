@@ -2,7 +2,7 @@ import rx
 
 /// A runtime-agnostic asynchronous computation.
 ///
-/// `start` receives a one-shot resolver and returns a cancellation function.
+/// `start` receives a resolver and returns a cancellation function.
 /// The effect implementation may use a BEAM process, timer, socket, FFI callback,
 /// or any other mechanism. rx-gleam does not spawn work for the effect.
 pub opaque type Effect(value, error) {
@@ -51,23 +51,11 @@ pub fn map(
   })
 }
 
-pub fn then(
-  effect: Effect(a, error),
-  next: fn(a) -> Effect(b, error),
-) -> Effect(b, error) {
-  Effect(fn(resolve) {
-    run(effect, fn(result) {
-      case result {
-        Ok(value) -> {
-          let _cancel_inner = run(next(value), resolve)
-          Nil
-        }
-        Error(reason) -> resolve(Error(reason))
-      }
-    })
-  })
-}
-
+/// Convert one effect result into an Observable.
+///
+/// The effect's cancellation function becomes the Observable subscription
+/// teardown. Multiple or late resolver calls are still governed by the same
+/// runtime protocol as every other Observable producer.
 pub fn to_observable(effect: Effect(value, error)) -> rx.Observable(value, error) {
   rx.create(fn(emitter) {
     run(effect, fn(result) {
