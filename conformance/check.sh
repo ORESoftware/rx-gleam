@@ -21,6 +21,7 @@ gleam format --check src test
 gleam test
 
 for required in \
+  LICENSE \
   gleam.toml \
   manifest.toml \
   .zpkg.toml \
@@ -33,6 +34,7 @@ for required in \
   src/rx/flow_model.gleam \
   test/cookbook_test.gleam \
   test/use_cases_test.gleam \
+  test/runtime_shutdown_test.gleam \
   formal/RxProtocol.tla \
   formal/RxProtocol.cfg \
   formal/RxAsyncFlow.tla \
@@ -44,6 +46,8 @@ for required in \
 do
   [ -f "$required" ] || fail "missing required file: $required"
 done
+
+grep -q '^MIT License$' LICENSE || fail "LICENSE is not the declared MIT license"
 
 # Public protocol constructors must stay exhaustive and explicit.
 grep -q 'Terminated, CompleteKind' src/rx/protocol.gleam || fail "protocol terminal matrix is incomplete"
