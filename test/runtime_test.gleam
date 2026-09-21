@@ -9,6 +9,7 @@ pub type Event {
   Value(Int)
   Completed
   ProtocolViolation(protocol.ProtocolError)
+  DuplicateTeardown
   TornDown
 }
 
@@ -19,8 +20,13 @@ pub fn main() -> Nil {
 pub fn runtime_rejects_post_terminal_notifications_test() {
   let events = process.new_subject()
   let assert Ok(runtime_) =
-    runtime.start_checked(fn(reason) {
-      process.send(events, ProtocolViolation(reason))
+    runtime.start_checked(fn(diagnostic) {
+      case diagnostic {
+        runtime.ProtocolViolation(reason) ->
+          process.send(events, ProtocolViolation(reason))
+        runtime.DuplicateTeardownRegistration ->
+          process.send(events, DuplicateTeardown)
+      }
     })
 
   let source: rx.Observable(Int, String) =
