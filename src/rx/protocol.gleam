@@ -4,6 +4,12 @@ pub type Notification(value, error) {
   Complete
 }
 
+pub type Kind {
+  NextKind
+  ErrorKind
+  CompleteKind
+}
+
 pub type Phase {
   Open
   Terminated
@@ -14,17 +20,25 @@ pub type ProtocolError {
   DuplicateTermination
 }
 
+pub fn kind(notification: Notification(value, error)) -> Kind {
+  case notification {
+    Next(_) -> NextKind
+    Error(_) -> ErrorKind
+    Complete -> CompleteKind
+  }
+}
+
 pub fn transition(
   phase: Phase,
-  notification: Notification(value, error),
+  event: Kind,
 ) -> Result(Phase, ProtocolError) {
-  case phase, notification {
-    Open, Next(_) -> Ok(Open)
-    Open, Error(_) -> Ok(Terminated)
-    Open, Complete -> Ok(Terminated)
-    Terminated, Next(_) -> Error(NotificationAfterTermination)
-    Terminated, Error(_) -> Error(DuplicateTermination)
-    Terminated, Complete -> Error(DuplicateTermination)
+  case phase, event {
+    Open, NextKind -> Ok(Open)
+    Open, ErrorKind -> Ok(Terminated)
+    Open, CompleteKind -> Ok(Terminated)
+    Terminated, NextKind -> Error(NotificationAfterTermination)
+    Terminated, ErrorKind -> Error(DuplicateTermination)
+    Terminated, CompleteKind -> Error(DuplicateTermination)
   }
 }
 
@@ -41,7 +55,7 @@ fn validate_from(
   case notifications {
     [] -> Ok(phase)
     [first, ..rest] ->
-      case transition(phase, first) {
+      case transition(phase, kind(first)) {
         Ok(next) -> validate_from(next, rest)
         Error(error) -> Error(error)
       }
