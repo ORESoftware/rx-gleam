@@ -27,6 +27,27 @@ pub fn run(
   effect.run(effect_, resolve)
 }
 
+/// `use`-friendly spelling for registering a later continuation.
+///
+/// Example:
+///
+/// ```gleam
+/// use result <- future.await(fetch_user())
+/// case result {
+///   Ok(user) -> use_user(user)
+///   Error(reason) -> report(reason)
+/// }
+/// ```
+///
+/// This does not block a BEAM scheduler or the rx Runtime actor. It registers
+/// the continuation and returns the Future's physical cancellation callback.
+pub fn await(
+  future: Future(value, error),
+  continue: fn(Result(value, error)) -> Nil,
+) -> fn() -> Nil {
+  run(future, continue)
+}
+
 pub fn pure(value: value) -> Future(value, error) {
   Future(effect.pure(value))
 }
