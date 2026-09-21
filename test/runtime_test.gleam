@@ -31,7 +31,7 @@ pub fn runtime_rejects_post_terminal_notifications_test() {
       fn() { process.send(events, TornDown) }
     })
 
-  let _subscription =
+  let assert Ok(_subscription) =
     rx.subscribe(
       source,
       runtime_,
@@ -63,7 +63,7 @@ pub fn cancellation_is_idempotent_and_teardown_runs_once_test() {
       fn() { process.send(events, TornDown) }
     })
 
-  let subscription =
+  let assert Ok(subscription) =
     rx.subscribe(
       source,
       runtime_,
