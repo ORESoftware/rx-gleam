@@ -56,7 +56,9 @@ pub fn map(
 /// The effect's cancellation function becomes the Observable subscription
 /// teardown. Multiple or late resolver calls are still governed by the same
 /// runtime protocol as every other Observable producer.
-pub fn to_observable(effect: Effect(value, error)) -> rx.Observable(value, error) {
+pub fn to_observable(
+  effect: Effect(value, error),
+) -> rx.Observable(value, error) {
   rx.create(fn(emitter) {
     run(effect, fn(result) {
       case result {

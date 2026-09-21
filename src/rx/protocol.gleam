@@ -1,7 +1,7 @@
 pub type Notification(value, error) {
-  Next(value)
-  Error(error)
-  Complete
+  OnNext(value)
+  OnError(error)
+  OnComplete
 }
 
 pub type Kind {
@@ -22,16 +22,13 @@ pub type ProtocolError {
 
 pub fn kind(notification: Notification(value, error)) -> Kind {
   case notification {
-    Next(_) -> NextKind
-    Error(_) -> ErrorKind
-    Complete -> CompleteKind
+    OnNext(_) -> NextKind
+    OnError(_) -> ErrorKind
+    OnComplete -> CompleteKind
   }
 }
 
-pub fn transition(
-  phase: Phase,
-  event: Kind,
-) -> Result(Phase, ProtocolError) {
+pub fn transition(phase: Phase, event: Kind) -> Result(Phase, ProtocolError) {
   case phase, event {
     Open, NextKind -> Ok(Open)
     Open, ErrorKind -> Ok(Terminated)

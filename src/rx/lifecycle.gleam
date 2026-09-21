@@ -1,10 +1,7 @@
 import rx/protocol
 
 pub type State {
-  Active(
-    phase: protocol.Phase,
-    teardown_ready: Bool,
-  )
+  Active(phase: protocol.Phase, teardown_ready: Bool)
   Closed
 }
 
@@ -32,51 +29,44 @@ pub fn transition(state: State, action: Action) -> #(State, List(Command)) {
     Closed, Notify(_) -> #(Closed, [])
     Closed, Cancel -> #(Closed, [])
 
-    Active(phase: protocol.Open, teardown_ready: False), InstallTeardown ->
-      #(
-        Active(phase: protocol.Open, teardown_ready: True),
-        [],
-      )
+    Active(phase: protocol.Open, teardown_ready: False), InstallTeardown -> #(
+      Active(phase: protocol.Open, teardown_ready: True),
+      [],
+    )
 
-    Active(phase: protocol.Terminated, teardown_ready: False), InstallTeardown ->
-      #(Closed, [RunIncomingTeardown])
+    Active(phase: protocol.Terminated, teardown_ready: False), InstallTeardown
+    -> #(Closed, [RunIncomingTeardown])
 
-    Active(phase, teardown_ready: True), InstallTeardown ->
-      #(
-        Active(phase: phase, teardown_ready: True),
-        [RunIncomingTeardown, ReportDuplicateTeardown],
-      )
+    Active(phase, teardown_ready: True), InstallTeardown -> #(
+      Active(phase: phase, teardown_ready: True),
+      [RunIncomingTeardown, ReportDuplicateTeardown],
+    )
 
     Active(phase, teardown_ready), Notify(kind) ->
       case protocol.transition(phase, kind) {
-        Error(reason) ->
-          #(
-            Active(phase: phase, teardown_ready: teardown_ready),
-            [ReportProtocolError(reason)],
-          )
+        Error(reason) -> #(
+          Active(phase: phase, teardown_ready: teardown_ready),
+          [ReportProtocolError(reason)],
+        )
 
-        Ok(protocol.Open) ->
-          #(
-            Active(phase: protocol.Open, teardown_ready: teardown_ready),
-            [Deliver],
-          )
+        Ok(protocol.Open) -> #(
+          Active(phase: protocol.Open, teardown_ready: teardown_ready),
+          [Deliver],
+        )
 
         Ok(protocol.Terminated) ->
           case teardown_ready {
             True -> #(Closed, [Deliver, RunStoredTeardown])
-            False ->
-              #(
-                Active(
-                  phase: protocol.Terminated,
-                  teardown_ready: False,
-                ),
-                [Deliver],
-              )
+            False -> #(
+              Active(phase: protocol.Terminated, teardown_ready: False),
+              [Deliver],
+            )
           }
       }
 
-    Active(phase: _, teardown_ready: True), Cancel ->
-      #(Closed, [RunStoredTeardown])
+    Active(phase: _, teardown_ready: True), Cancel -> #(Closed, [
+      RunStoredTeardown,
+    ])
 
     Active(phase: _, teardown_ready: False), Cancel -> #(Closed, [])
   }

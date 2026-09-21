@@ -9,12 +9,12 @@ A serialized, single-actor Reactive Extensions library for Gleam.
 - one `rx/runtime.Runtime` owns exactly one OTP actor;
 - observer callbacks are dispatched through that actor and therefore execute serially;
 - operators do not create hidden actors, worker pools, or schedulers;
-- callers can use BEAM processes, timers, sockets, ports, FFI callbacks, or any other async mechanism through `rx/effect.Effect`;
+- callers can use BEAM processes, timers, sockets, ports, FFI callbacks, or any other async mechanism through `rx/effect.Effect` / `rx/future.Future`;
 - observable values and errors stay statically typed; the runtime does not erase them to `Dynamic`.
 
 The guiding rule is: **ReactiveX defines composition; BEAM defines concurrency.**
 
-The initial implementation targets current Gleam 1.15+ and Gleam OTP 1.x APIs (`gleam_otp` 1.3.x / `gleam_erlang` 1.3.x). CI is pinned to Gleam 1.18 and OTP 28.
+The package declares Gleam `>= 1.15.4`. CI verifies that floor on OTP 27 and separately runs the full Gleam 1.18 / OTP 28 conformance gate. `manifest.toml` is committed and checked for dependency-resolution drift.
 
 ## Core API
 
@@ -43,9 +43,23 @@ pub fn example() {
 }
 ```
 
-`subscribe` returns `Result(Subscription, RuntimeError)` rather than hiding runtime startup failure behind a panic. Cancellation is idempotent and subscription teardown runs at most once.
+`subscribe` returns `Result(Subscription, RuntimeError)`. A stopped runtime produces the typed `RuntimeStopped` error instead of waiting on a request/reply timeout. Cancellation is idempotent and subscription teardown runs at most once.
 
-Current primitives include `Observable(value, error)`, `Observer(value, error)`, `Subscription`, `Emitter(value, error)`, `Runtime`, `RuntimeError`, `Effect(value, error)`, `create`, `of`, `from_list`, `empty`, `fail`, `map`, `filter`, `tap`, cancellation, and effect-to-observable conversion.
+Registration is deliberately nonblocking and reentrant: an observer callback may subscribe another Observable on the same runtime without asking the runtime actor to synchronously reply to itself.
+
+`runtime.stop(runtime)` is also nonblocking, so it is safe to request shutdown from inside an observer callback. Before the actor exits it runs stored subscription teardowns and cancels active async-flow Futures.
+
+Current primitives include `Observable(value, error)`, `Observer(value, error)`, `Subscription`, `Emitter(value, error)`, `Runtime`, `RuntimeError`, `Effect(value, error)`, `Future(value, error)`, `create`, `of`, `from_list`, `empty`, `fail`, `map`, `filter`, `tap`, cancellation, `from_future`, `concat_map`, bounded `merge_map`, ordered concurrent mapping, and async filtering.
+
+## Callback discipline
+
+The runtime actor is a **serialization boundary, not a blocking-work executor**. Observer handlers, diagnostics, Observable producer setup, Future start callbacks, and async projection functions must return promptly. They should start or register application-owned async work and report completion later.
+
+Do not call blocking `process.receive`, sleep, perform long CPU work, or run blocking I/O inside an Rx callback. If an operation can block, move it to an application-owned process/OTP component or a nonblocking callback API and expose it as a `Future`/`Effect`.
+
+The library enforces this architectural side of the contract mechanically: production `src/` may contain exactly one `actor.new`, and conformance rejects library-owned `process.spawn*` and `process.receive` calls.
+
+A `Future` producer must invoke its resolver at most once. When a Future participates in an Observable flow, duplicate or late completions are additionally suppressed by the actor-owned flow state machine.
 
 ## Protocol contract
 
@@ -61,29 +75,34 @@ The repository includes:
 
 - exhaustive generated protocol traces through length 6;
 - an independently implemented reference model used as a differential oracle;
-- runtime tests for post-terminal rejection and exactly-once teardown;
-- a TLA+ specification under `formal/`;
+- runtime tests for post-terminal rejection, reentrant subscription, shutdown cleanup, and exactly-once teardown;
+- TLA+ specifications under `formal/` for the notification protocol and async-flow machine;
 - explicit operator proof obligations in [`docs/FORMAL_METHODS.md`](docs/FORMAL_METHODS.md).
 
-A finite test bound is not described as a mathematical proof. TLC is the formal-model checker and the conformance script reports whether it actually ran.
+A finite test bound is not described as a mathematical proof. TLC is the formal-model checker; `--full` conformance refuses to report PASS unless TLC is configured and all models succeed.
 
 ## Async without an Rx scheduler
 
-`Effect(value, error)` is deliberately agnostic:
+`Effect(value, error)` / `Future(value, error)` are deliberately execution-agnostic. The producer may launch a process, issue I/O, register a timer, call an Erlang library, or bridge an FFI callback. Completion feeds back into the observable runtime and observer-visible work is serialized again by the owning actor.
 
-```gleam
-Effect(
-  fn(resolve: fn(Result(value, error)) -> Nil) -> fn() -> Nil,
-)
-```
+Async flattening state is owned by that same runtime actor. `concat_map` provides strict FIFO single-flight work; `merge_map` bounds concurrent Futures and emits in completion order; `map_ordered` allows concurrent work while preserving input order; async filters use the same machinery.
 
-The implementation can launch a process, issue I/O, register a timer, call an Erlang library, or bridge an FFI callback. Completion feeds back into the observable runtime and observer-visible work is serialized again by the owning actor.
+## Cookbook
 
-There is deliberately no unsafe `effect.then` shortcut. Correct dependent-effect cancellation needs actor-owned state, so that functionality belongs in the shared flattening state machine for `concat_map`, `merge_map`, `switch_map`, and `exhaust_map`.
+See [`docs/COOKBOOK.md`](docs/COOKBOOK.md) for the 20 executable API recipes mirrored 1:1 by `test/cookbook_test.gleam`.
 
-## 20 common problems
+## Server-side use cases
 
-See [`docs/COOKBOOK.md`](docs/COOKBOOK.md) for 20 concrete patterns covering finite streams, errors, cancellation, effects, child processes, protocol validation, and formal checks.
+See [`docs/USE_CASES.md`](docs/USE_CASES.md) for 20 problem statements with Gleam solutions focused on service and BEAM workloads, including:
+
+- async FIFO queues with asynchronous processing;
+- in-memory request/stream-item de-duplication;
+- keyed request grouping/partition routing;
+- merging multiple push sources;
+- rebasing heterogeneous inputs onto one canonical event stream;
+- bounded RPC fan-out, ordered enrichment, async authorization, transactional writes, retries, batching, timeouts, dependency joins, pause/resume gates, reducer actors, watchdogs, dependent service calls, progress streams, moving aggregates, and connection-scoped cancellation.
+
+The first five use-case patterns have dedicated integration tests in `test/use_cases_test.gleam`. The examples keep application-owned state and concurrency explicit; they do not invent hidden Rx actors or claim operators that do not exist yet.
 
 ## Quality control
 
@@ -99,16 +118,15 @@ zed validate
 git config core.hooksPath .githooks
 ```
 
-`pre-commit` runs the quick conformance gate. `pre-push` refuses to bypass `zed validate` and runs full conformance.
+`pre-commit` runs the quick conformance gate. `pre-push` refuses to bypass Zed validation or the formal gate and requires `TLA2TOOLS_JAR`.
 
-Direct source-tree checks:
+Quick source-tree checks:
 
 ```sh
 sh conformance/check.sh --quick
-sh conformance/check.sh --full
 ```
 
-To include the TLA+ model check:
+Full conformance requires TLA+ Tools and will fail rather than silently skip model checking:
 
 ```sh
 export TLA2TOOLS_JAR=/path/to/tla2tools.jar
@@ -123,4 +141,4 @@ zed r2g
 
 ## Roadmap
 
-The next state-machine layer will add shared implementations for `merge_map`, `concat_map`, `switch_map`, and `exhaust_map`, followed by `scan`, subjects, timers, combination operators, retry/recovery, and virtual-time testing. Stateful operators must extend the formal transition model before they are considered stable.
+The next stateful/combinator layer should cover observable-to-observable `merge` / `concat`, `distinct` variants, keyed grouping/partitioning, `scan`, buffering/windowing, retry/recovery, timeout, `zip` / `combine_latest`, `switch_map`, `exhaust_map`, subjects, timers, and virtual-time testing. Stateful operators must extend the executable reference model and formal/conformance coverage before they are considered stable.

@@ -1,4 +1,4 @@
-import rx/protocol.{type Notification, Complete, Error, Next}
+import rx/protocol.{type Notification}
 import rx/runtime.{type Runtime, type RuntimeError}
 
 pub type Observer(value, error) {
@@ -10,10 +10,7 @@ pub type Observer(value, error) {
 }
 
 pub opaque type Subscription {
-  Subscription(
-    runtime_: Runtime,
-    key: runtime.SubscriptionKey,
-  )
+  Subscription(runtime_: Runtime, key: runtime.SubscriptionKey)
 }
 
 pub opaque type Observable(value, error) {
@@ -35,24 +32,53 @@ pub fn observer(
   Observer(on_next:, on_error:, on_complete:)
 }
 
+/// Create an Observable from a callback producer.
+///
+/// The producer may call the emitter now or at any later time. This is the
+/// primitive used to adapt asynchronous push sources such as sockets, queues,
+/// actor messages, timers, and callback APIs.
 pub fn create(
   producer: fn(Emitter(value, error)) -> fn() -> Nil,
+) -> Observable(value, error) {
+  create_with_runtime(fn(_, emitter) { producer(emitter) })
+}
+
+/// Create an Observable whose producer can access the owning Runtime.
+///
+/// This is intended for advanced operators that need to register serialized
+/// state with the runtime while still accepting asynchronous source emissions.
+pub fn create_with_runtime(
+  producer: fn(Runtime, Emitter(value, error)) -> fn() -> Nil,
+) -> Observable(value, error) {
+  create_checked(fn(runtime_, emitter) { Ok(producer(runtime_, emitter)) })
+}
+
+/// Runtime-aware Observable construction with typed subscription failure.
+pub fn create_checked(
+  producer: fn(Runtime, Emitter(value, error)) ->
+    Result(fn() -> Nil, RuntimeError),
 ) -> Observable(value, error) {
   Observable(fn(runtime_, observer_) {
     case runtime.register(runtime_) {
       Error(reason) -> Error(reason)
       Ok(key) -> {
-        let emitter = Emitter(fn(notification) {
-          runtime.dispatch(
-            runtime_,
-            key,
-            protocol.kind(notification),
-            fn() { notify(observer_, notification) },
-          )
-        })
-        let teardown = producer(emitter)
-        runtime.set_teardown(runtime_, key, teardown)
-        Ok(Subscription(runtime_: runtime_, key: key))
+        let emitter =
+          Emitter(fn(notification) {
+            runtime.dispatch(runtime_, key, protocol.kind(notification), fn() {
+              notify(observer_, notification)
+            })
+          })
+
+        case producer(runtime_, emitter) {
+          Error(reason) -> {
+            runtime.cancel(runtime_, key)
+            Error(reason)
+          }
+          Ok(teardown) -> {
+            runtime.set_teardown(runtime_, key, teardown)
+            Ok(Subscription(runtime_: runtime_, key: key))
+          }
+        }
       }
     }
   })
@@ -81,15 +107,15 @@ pub fn emit(
 }
 
 pub fn next(emitter: Emitter(value, error), value: value) -> Nil {
-  emit(emitter, Next(value))
+  emit(emitter, protocol.OnNext(value))
 }
 
 pub fn error(emitter: Emitter(value, error), reason: error) -> Nil {
-  emit(emitter, Error(reason))
+  emit(emitter, protocol.OnError(reason))
 }
 
 pub fn complete(emitter: Emitter(value, error)) -> Nil {
-  emit(emitter, Complete)
+  emit(emitter, protocol.OnComplete)
 }
 
 pub fn of(value: value) -> Observable(value, error) {
@@ -182,8 +208,8 @@ fn notify(
   notification: Notification(value, error),
 ) -> Nil {
   case notification {
-    Next(value) -> observer_.on_next(value)
-    Error(reason) -> observer_.on_error(reason)
-    Complete -> observer_.on_complete()
+    protocol.OnNext(value) -> observer_.on_next(value)
+    protocol.OnError(reason) -> observer_.on_error(reason)
+    protocol.OnComplete -> observer_.on_complete()
   }
 }

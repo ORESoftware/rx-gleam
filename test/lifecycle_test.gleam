@@ -1,3 +1,4 @@
+import gleam/list
 import gleeunit
 import gleeunit/should
 import rx/lifecycle
@@ -60,7 +61,7 @@ fn generate(
     0 -> current
     _ -> {
       let extended = prepend_each(current, alphabet())
-      generate(current ++ extended, remaining - 1)
+      generate(list.append(current, extended), remaining - 1)
     }
   }
 }
@@ -72,7 +73,7 @@ fn prepend_each(
   case sequences {
     [] -> []
     [sequence, ..rest] ->
-      attach(sequence, symbols) ++ prepend_each(rest, symbols)
+      list.append(attach(sequence, symbols), prepend_each(rest, symbols))
   }
 }
 
@@ -111,9 +112,7 @@ fn trace_is_safe(
         lifecycle.Closed -> next_state == lifecycle.Closed
         lifecycle.Active(..) -> True
       }
-      absorbing
-        && next_runs <= 1
-        && trace_is_safe(rest, next_state, next_runs)
+      absorbing && next_runs <= 1 && trace_is_safe(rest, next_state, next_runs)
     }
   }
 }
