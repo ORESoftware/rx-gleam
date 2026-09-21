@@ -5,13 +5,15 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    permissions:
-      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
       - name: Detect Gleam package source tree
         id: package
         shell: bash
@@ -22,55 +24,54 @@ jobs:
             echo 'present=false' >> "$GITHUB_OUTPUT"
             echo 'Package source tree is not on this ref yet; compiler checks are skipped.'
           fi
+
       - uses: erlef/setup-beam@v1
         if: steps.package.outputs.present == 'true'
         with:
           otp-version: '28'
           gleam-version: '1.18.0'
           rebar3-version: '3'
-      - name: Normalize formatting for compiler feedback
+
+      - name: Verify canonical Gleam formatting
         if: steps.package.outputs.present == 'true'
-        run: gleam format src test
-      - name: Show formatting diff
-        if: steps.package.outputs.present == 'true'
-        run: git diff -- src test
+        run: gleam format --check src test
+
       - name: Test
         if: steps.package.outputs.present == 'true'
         run: gleam test
-      - name: Structural conformance
-        if: steps.package.outputs.present == 'true'
-        run: sh conformance/check.sh --quick
-      - name: Verify formatting is committed
-        if: steps.package.outputs.present == 'true'
-        run: git diff --exit-code -- src test
 
-  format-pr2:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 2 && github.event.pull_request.head.repo.full_name == github.repository }}
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: '28'
-          gleam-version: '1.18.0'
-          rebar3-version: '3'
-      - name: Apply canonical Gleam formatting
-        run: gleam format src test
-      - name: Commit formatting when needed
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - name: Install checksum-pinned Zed v0.3.0
+        if: steps.package.outputs.present == 'true'
+        shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- src test; then
-            echo 'Formatting already canonical.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src test
-          git commit -m 'style: apply canonical Gleam formatting'
-          git push origin "HEAD:${HEAD_REF}"
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz \
+            -o "$archive"
+          echo "e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Validate Zed package contract
+        if: steps.package.outputs.present == 'true'
+        run: |
+          zed validate
+          sh conformance/package-smoke.sh
+
+      - name: Install checksum-pinned TLA+ tools v1.7.4
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/tla2tools.jar"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
+            -o "$jar"
+          echo "bee4a54f3ee3d4afc347c3240ec2d9e93b075104  $jar" | sha1sum --check
+          echo "TLA2TOOLS_JAR=$jar" >> "$GITHUB_ENV"
+
+      - name: Full conformance including TLC
+        if: steps.package.outputs.present == 'true'
+        run: sh conformance/check.sh --full
