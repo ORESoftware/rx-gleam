@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 2
 
       - name: Validate bounded authoritative repair contract
         shell: bash
@@ -35,7 +35,7 @@ jobs:
           grep -qF "ZED_PKG_REGISTRY: 'https://registry.zpkg.net'" "$workflow"
           grep -qF "RELEASE_SHA: '110411526a780cfaa806a559c283c82b37c12dfb'" "$workflow"
           grep -qF "ZED_PKG_SOURCE_FALLBACK: '0'" "$workflow"
-          grep -qF 'github.event_name == '\''workflow_dispatch'\''' "$workflow"
+          grep -qF "if: github.event_name == 'workflow_dispatch'" "$workflow"
           grep -qF 'expected HTTP 404 after successful token authentication' "$workflow"
           git diff --check HEAD^ HEAD
 
