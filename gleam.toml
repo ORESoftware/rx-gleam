@@ -1,5 +1,5 @@
 name = "rx_gleam"
-version = "0.1.0"
+version = "0.1.1"
 description = "Composable eager and lazy reactive streams for Gleam with a serialized single-actor async runtime"
 licences = ["MIT"]
 gleam = ">= 1.15.4"
