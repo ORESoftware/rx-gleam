@@ -141,14 +141,14 @@ jobs:
           ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
           ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
-          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.HEX_PUBLISH_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
         run: |
           set -euo pipefail
           if [ -z "$ZED_PKG_TOKEN" ]; then
             test -n "$ZED_PKG_AUTH_EMAIL" || { echo '::error::configure ZED_PKG_TOKEN or ZED_PKG_AUTH_EMAIL'; exit 1; }
             test -n "$ZED_PKG_AUTH_PASSWORD" || { echo '::error::configure ZED_PKG_TOKEN or ZED_PKG_AUTH_PASSWORD'; exit 1; }
           fi
-          test -n "$HEXPM_API_KEY" || { echo '::error::configure HEXPM_API_KEY, ZED_HEX_API_KEY, or HEX_API_KEY'; exit 1; }
+          test -n "$HEXPM_API_KEY" || { echo '::error::configure HEXPM_API_KEY, HEX_PUBLISH_KEY, ZED_HEX_API_KEY, or HEX_API_KEY'; exit 1; }
 
       - name: Create or reuse the matching release tag
         id: tag
@@ -244,7 +244,7 @@ jobs:
       - name: Publish rx_gleam to Hex
         if: steps.hex.outputs.exists != 'true'
         env:
-          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.HEX_PUBLISH_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
         run: gleam publish --yes
 
       - name: Configure optional Zed registry override
