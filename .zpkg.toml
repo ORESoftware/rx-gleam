@@ -1,7 +1,7 @@
 [package]
 org = "oresoftware"
 name = "rx-gleam"
-version = "0.1.0"
+version = "0.1.1"
 description = "Serialized single-actor Reactive Extensions for Gleam"
 license = "MIT"
 keywords = ["gleam", "reactive", "rxjs", "reactivex", "beam"]
