@@ -1,0 +1,75 @@
+name: repair-zed-v0.1.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-zed-v0.1.1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  ZED_VERSION: '0.3.0'
+  ZED_ARCHIVE_SHA256: 'e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7'
+  RELEASE_SHA: '110411526a780cfaa806a559c283c82b37c12dfb'
+
+jobs:
+  publish-zed-v0-1-1:
+    runs-on: ubuntu-24.04
+    environment: zed-pkg
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: v0.1.1
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)" = '0.1.1'
+          test "$(awk -F'"' '/^version = / { print $2; exit }' .zpkg.toml)" = '0.1.1'
+          test -z "$(git status --porcelain)"
+
+      - name: Install checksum-pinned Zed v0.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/zed-pkg/zed-cli/releases/download/v${ZED_VERSION}/zed-x86_64-unknown-linux-musl.tar.gz" \
+            -o "$archive"
+          echo "${ZED_ARCHIVE_SHA256}  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Configure optional Zed registry override
+        shell: bash
+        env:
+          ZED_REGISTRY_OVERRIDE: ${{ vars.ZED_PKG_REGISTRY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ZED_REGISTRY_OVERRIDE" ]; then
+            echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Publish immutable v0.1.1 artifact to Zed
+        shell: bash
+        env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+          ZED_PKG_GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_TOKEN"
+          test -z "$(git status --porcelain)"
+          zed validate
+          zed publish
