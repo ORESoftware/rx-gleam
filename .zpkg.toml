@@ -17,6 +17,10 @@ dir = ".vendor/.zed"
 dir = "."
 adapter = "none"
 
+[targets.gleam.native]
+registry = "hex"
+package = "rx_gleam"
+
 [hooks]
 pre-install = ["sh ./scripts/zed-pre-install.sh"]
 post-install = ["sh ./scripts/zed-post-install.sh"]
