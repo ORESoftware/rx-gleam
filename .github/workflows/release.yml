@@ -89,7 +89,7 @@ jobs:
           set -euo pipefail
           zed validate
           sh conformance/package-smoke.sh
-          zed r2g --allow-install-hooks
+          ZED_PKG_ALLOW_INSTALL_HOOKS=1 zed r2g
 
       - name: Preflight coordinated Zed and Hex release set
         shell: bash
