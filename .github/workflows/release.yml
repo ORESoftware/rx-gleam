@@ -100,7 +100,7 @@ jobs:
           grep -q '"package":"rx_gleam"' "$RUNNER_TEMP/release-plan.json" || \
             grep -q '"package": "rx_gleam"' "$RUNNER_TEMP/release-plan.json"
           zed release preflight
-          zed release publish --target gleam --dry-run
+          zed release publish --dry-run
           zed pack
 
   publish:
@@ -175,7 +175,7 @@ jobs:
         if: steps.hex.outputs.exists != 'true'
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
-        run: zed release publish --target gleam
+        run: zed release publish
 
       - name: Authenticate to zpkg.net
         env:
