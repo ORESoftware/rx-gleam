@@ -83,16 +83,13 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
           echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
 
-      - name: Validate and pack Zed package
+      - name: Validate and roundtrip Zed package
         shell: bash
         run: |
           set -euo pipefail
           zed validate
           sh conformance/package-smoke.sh
-          zed pack
-          # zed r2g v0.3.0 cannot forward explicit install-hook consent.
-          # Tracked separately in zed-pkg/zed-cli#475; do not remove the
-          # package's intentional install hooks just to bypass that CLI bug.
+          zed r2g
 
       - name: Preflight coordinated Zed and Hex release set
         shell: bash
@@ -141,13 +138,11 @@ jobs:
       - name: Require publisher credentials before tagging
         shell: bash
         env:
-          ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
-          ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "$ZED_PKG_AUTH_EMAIL" || { echo '::error::ZED_PKG_AUTH_EMAIL is not configured'; exit 1; }
-          test -n "$ZED_PKG_AUTH_PASSWORD" || { echo '::error::ZED_PKG_AUTH_PASSWORD is not configured'; exit 1; }
+          test -n "$ZED_PKG_TOKEN" || { echo '::error::ZED_PKG_TOKEN is not configured'; exit 1; }
           test -n "$HEXPM_API_KEY" || { echo '::error::HEXPM_API_KEY is not configured'; exit 1; }
 
       - name: Create or reuse the matching release tag
@@ -257,14 +252,9 @@ jobs:
             echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
           fi
 
-      - name: Authenticate to zpkg.net
-        env:
-          ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
-          ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
-        run: zed auth login --email "$ZED_PKG_AUTH_EMAIL"
-
       - name: Publish oresoftware/rx-gleam
         env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           ZED_PKG_GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
