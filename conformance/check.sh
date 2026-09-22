@@ -40,6 +40,8 @@ for required in \
   test/runtime_shutdown_test.gleam \
   formal/RxProtocol.tla \
   formal/RxProtocol.cfg \
+  formal/RxLifecycle.tla \
+  formal/RxLifecycle.cfg \
   formal/RxAsyncFlow.tla \
   formal/RxAsyncFlowOrdered.cfg \
   formal/RxAsyncFlowCompletion.cfg \
@@ -110,6 +112,7 @@ if [ "$mode" = "--full" ]; then
   command -v java >/dev/null 2>&1 || fail "java is required for full conformance"
 
   java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxProtocol.cfg formal/RxProtocol.tla
+  java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxLifecycle.cfg formal/RxLifecycle.tla
   java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowOrdered.cfg formal/RxAsyncFlow.tla
   java -XX:+UseParallelGC -cp "$TLA2TOOLS_JAR" tlc2.TLC -config formal/RxAsyncFlowCompletion.cfg formal/RxAsyncFlow.tla
 fi
