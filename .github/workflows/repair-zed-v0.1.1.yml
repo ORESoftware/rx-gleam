@@ -60,13 +60,14 @@ jobs:
             echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
           fi
 
-      - name: Publish immutable v0.1.1 artifact to Zed
+      - name: Publish immutable v0.1.1 artifact to authoritative Zed registry
         shell: bash
         env:
           ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           ZED_PKG_GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          ZED_PKG_SOURCE_FALLBACK: '0'
         run: |
           set -euo pipefail
           test -n "$ZED_PKG_TOKEN"
