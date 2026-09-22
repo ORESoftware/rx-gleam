@@ -130,6 +130,8 @@ NoDuplicates(seq) ==
 AllBelow(seq, bound) ==
   \A i \in 1..Len(seq): seq[i] < bound
 
+SeqSet(seq) == {seq[i] : i \in 1..Len(seq)}
+Accepted == 0..(nextSequence - 1)
 OrderedPrefix == [i \in 1..nextEmit |-> i - 1]
 
 TypeInvariant ==
@@ -147,25 +149,39 @@ TypeInvariant ==
 CapacityBound == Cardinality(active) <= Concurrency
 
 UniqueAndDisjoint ==
+  LET emittedSet == SeqSet(emitted) IN
   /\ NoDuplicates(pending)
   /\ NoDuplicates(emitted)
   /\ (\A i \in 1..Len(pending): pending[i] \notin active)
   /\ (\A i \in 1..Len(pending): pending[i] \notin completed)
+  /\ (\A i \in 1..Len(pending): pending[i] \notin emittedSet)
   /\ active \cap completed = {}
+  /\ active \cap emittedSet = {}
+  /\ completed \cap emittedSet = {}
 
 KnownSequences ==
   /\ AllBelow(pending, nextSequence)
-  /\ active \subseteq 0..(nextSequence - 1)
-  /\ completed \subseteq 0..(nextSequence - 1)
+  /\ active \subseteq Accepted
+  /\ completed \subseteq Accepted
   /\ AllBelow(emitted, nextSequence)
 
+RunningConservesAcceptedWork ==
+  status = Running =>
+    SeqSet(pending) \cup active \cup completed \cup SeqSet(emitted) = Accepted
+
 InputOrderIsPrefix == Order = InputOrder => emitted = OrderedPrefix
+InputOrderCursorMatchesEmissions == Order = InputOrder => nextEmit = Len(emitted)
+CompletionOrderHasNoBuffer == Order = CompletionOrder => completed = {}
 
 TerminalWorkCleared ==
   status \in Terminal =>
     /\ pending = << >>
     /\ active = {}
     /\ completed = {}
+
+DrainedRequiresInputDone == status = Drained => inputDone
+DrainedEmittedAllAccepted ==
+  status = Drained => Cardinality(SeqSet(emitted)) = nextSequence
 
 Spec == Init /\ [][Next]_vars
 
