@@ -150,7 +150,10 @@ fn transition_running(state: State, event: Event) -> #(State, List(Command)) {
           let inactive = State(..state, active: remaining_active)
           let #(emitted_state, emit_commands) = case state.order {
             CompletionOrder -> #(
-              State(..inactive, emitted: list.append(inactive.emitted, [sequence])),
+              State(
+                ..inactive,
+                emitted: list.append(inactive.emitted, [sequence]),
+              ),
               [Emit(sequence)],
             )
             InputOrder ->
@@ -245,10 +248,10 @@ fn accepted_exactly_once(state: State, sequence: Int) -> Bool {
     True -> True
     False ->
       count_occurrences(state.pending, sequence)
-        + count_occurrences(state.active, sequence)
-        + count_occurrences(state.completed, sequence)
-        + count_occurrences(state.emitted, sequence)
-        == 1
+      + count_occurrences(state.active, sequence)
+      + count_occurrences(state.completed, sequence)
+      + count_occurrences(state.emitted, sequence)
+      == 1
       && accepted_exactly_once(state, sequence + 1)
   }
 }
