@@ -141,14 +141,17 @@ jobs:
       - name: Require publisher credentials before tagging
         shell: bash
         env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
           ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
-          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "$ZED_PKG_AUTH_EMAIL" || { echo '::error::ZED_PKG_AUTH_EMAIL is not configured'; exit 1; }
-          test -n "$ZED_PKG_AUTH_PASSWORD" || { echo '::error::ZED_PKG_AUTH_PASSWORD is not configured'; exit 1; }
-          test -n "$HEXPM_API_KEY" || { echo '::error::HEXPM_API_KEY is not configured'; exit 1; }
+          if [ -z "$ZED_PKG_TOKEN" ]; then
+            test -n "$ZED_PKG_AUTH_EMAIL" || { echo '::error::configure ZED_PKG_TOKEN or ZED_PKG_AUTH_EMAIL'; exit 1; }
+            test -n "$ZED_PKG_AUTH_PASSWORD" || { echo '::error::configure ZED_PKG_TOKEN or ZED_PKG_AUTH_PASSWORD'; exit 1; }
+          fi
+          test -n "$HEXPM_API_KEY" || { echo '::error::configure HEXPM_API_KEY, ZED_HEX_API_KEY, or HEX_API_KEY'; exit 1; }
 
       - name: Create or reuse the matching release tag
         id: tag
@@ -244,7 +247,7 @@ jobs:
       - name: Publish rx_gleam to Hex
         if: steps.hex.outputs.exists != 'true'
         env:
-          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
         run: gleam publish --yes
 
       - name: Configure optional Zed registry override
@@ -257,14 +260,25 @@ jobs:
             echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
           fi
 
-      - name: Authenticate to zpkg.net
+      - name: Authenticate to zpkg.net when no direct token is configured
+        shell: bash
         env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
           ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
-        run: zed auth login --email "$ZED_PKG_AUTH_EMAIL"
+        run: |
+          set -euo pipefail
+          if [ -n "$ZED_PKG_TOKEN" ]; then
+            echo 'Using direct ZED_PKG_TOKEN; shared-auth login not required.'
+            exit 0
+          fi
+          test -n "$ZED_PKG_AUTH_EMAIL"
+          test -n "$ZED_PKG_AUTH_PASSWORD"
+          zed auth login --email "$ZED_PKG_AUTH_EMAIL"
 
       - name: Publish oresoftware/rx-gleam
         env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
           ZED_PKG_GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
