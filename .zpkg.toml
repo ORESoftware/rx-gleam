@@ -17,7 +17,7 @@ adapter = "none"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "sh -c 'f=$(find zed_modules -type f -path \"*/src/rx.gleam\" -print -quit); test -n \"$f\" && d=$(dirname \"$(dirname \"$f\")\") && test -f \"$d/gleam.toml\" && grep -q \"pub opaque type Observable\" \"$f\"'"
+smoke_test = "sh -c 'f=$(find -L zed_modules -type f -path \"*/src/rx.gleam\" -print -quit); test -n \"$f\" && d=$(dirname \"$(dirname \"$f\")\") && test -f \"$d/gleam.toml\" && grep -q \"pub opaque type Observable\" \"$f\"'"
 exclude = ["build/**", ".vendor/.zed/**", "zed_modules/**", ".git/**", "**/*.log", ".DS_Store"]
 
 [publish.native]
