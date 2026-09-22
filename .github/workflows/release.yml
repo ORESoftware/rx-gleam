@@ -79,11 +79,26 @@ jobs:
           echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
 
       - name: Validate and roundtrip Zed package
+        shell: bash
         run: |
           set -euo pipefail
           zed validate
           sh conformance/package-smoke.sh
           zed r2g --allow-install-hooks
+
+      - name: Preflight coordinated Zed and Hex release set
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          test -s "build/rx_gleam-${version}.tar"
+          mkdir -p .zed/native-release/hex
+          cp "build/rx_gleam-${version}.tar" ".zed/native-release/hex/rx_gleam-${version}.tar"
+          zed release plan --json | tee "$RUNNER_TEMP/release-plan.json"
+          grep -Eq '"registry"[[:space:]]*:[[:space:]]*"hex"' "$RUNNER_TEMP/release-plan.json"
+          grep -Eq '"package"[[:space:]]*:[[:space:]]*"rx_gleam"' "$RUNNER_TEMP/release-plan.json"
+          zed release preflight
+          zed release publish --dry-run
 
       - name: Install checksum-pinned TLA+ tools v1.7.4
         shell: bash
