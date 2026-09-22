@@ -23,6 +23,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  ZED_VERSION: '0.3.0'
+  ZED_ARCHIVE_SHA256: 'e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7'
+
 jobs:
   verify:
     name: verify-release-artifacts
@@ -63,6 +67,7 @@ jobs:
           gleam format --check src test
           gleam check
           gleam test
+          gleam docs build
           gleam export hex-tarball
 
       - name: Install checksum-pinned Zed v0.3.0
@@ -71,9 +76,9 @@ jobs:
           set -euo pipefail
           archive="$RUNNER_TEMP/zed.tar.gz"
           curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz \
+            "https://github.com/zed-pkg/zed-cli/releases/download/v${ZED_VERSION}/zed-x86_64-unknown-linux-musl.tar.gz" \
             -o "$archive"
-          echo "e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7  $archive" | sha256sum --check
+          echo "${ZED_ARCHIVE_SHA256}  $archive" | sha256sum --check
           mkdir -p "$RUNNER_TEMP/zed-bin"
           tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
           echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
@@ -99,6 +104,7 @@ jobs:
           grep -Eq '"package"[[:space:]]*:[[:space:]]*"rx_gleam"' "$RUNNER_TEMP/release-plan.json"
           zed release preflight
           zed release publish --dry-run
+          zed pack
 
       - name: Install checksum-pinned TLA+ tools v1.7.4
         shell: bash
@@ -130,14 +136,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require both publisher credentials before tagging
+      - name: Require publisher credentials before tagging
         shell: bash
         env:
-          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+          ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
+          ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
           HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "$ZED_PKG_TOKEN" || { echo '::error::ZED_PKG_TOKEN is not configured'; exit 1; }
+          test -n "$ZED_PKG_AUTH_EMAIL" || { echo '::error::ZED_PKG_AUTH_EMAIL is not configured'; exit 1; }
+          test -n "$ZED_PKG_AUTH_PASSWORD" || { echo '::error::ZED_PKG_AUTH_PASSWORD is not configured'; exit 1; }
           test -n "$HEXPM_API_KEY" || { echo '::error::HEXPM_API_KEY is not configured'; exit 1; }
 
       - name: Create or reuse the matching release tag
@@ -155,11 +163,11 @@ jobs:
           if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
             tagged_sha="$(git rev-list -n 1 "$tag")"
             if [ "$tagged_sha" = "$GITHUB_SHA" ]; then
-              echo "Tag $tag already points at this commit; release jobs may resume."
+              echo "Tag $tag already points at this commit; release may resume."
               release=true
             else
-              echo "Version $gleam_version is already tagged at $tagged_sha; no new release from $GITHUB_SHA."
-              release=false
+              echo "Version $gleam_version is already tagged at $tagged_sha; refusing to retag $GITHUB_SHA."
+              exit 1
             fi
           else
             git tag "$tag" "$GITHUB_SHA"
@@ -171,66 +179,15 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "release=$release" >> "$GITHUB_OUTPUT"
 
-  publish-zed:
-    name: publish-zed-package
+  publish:
+    name: publish-hex-then-zed
     if: needs.prepare.outputs.release == 'true'
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
       packages: write
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install checksum-pinned Zed v0.3.0
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/zed.tar.gz"
-          curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz \
-            -o "$archive"
-          echo "e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7  $archive" | sha256sum --check
-          mkdir -p "$RUNNER_TEMP/zed-bin"
-          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
-          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
-
-      - name: Configure optional Zed registry override
-        shell: bash
-        env:
-          ZED_REGISTRY_OVERRIDE: ${{ vars.ZED_PKG_REGISTRY }}
-        run: |
-          set -euo pipefail
-          if [ -n "$ZED_REGISTRY_OVERRIDE" ]; then
-            echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
-          fi
-
-      - name: Publish oresoftware/rx-gleam
-        shell: bash
-        env:
-          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git fetch --tags --force
-          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
-          zed validate
-          zed publish
-
-  publish-hex:
-    name: publish-hex-package
-    if: needs.prepare.outputs.release == 'true'
-    needs: prepare
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -243,13 +200,72 @@ jobs:
           gleam-version: '1.18.1'
           rebar3-version: '3'
 
-      - name: Publish rx_gleam to Hex
+      - name: Install checksum-pinned Zed v0.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/zed-pkg/zed-cli/releases/download/v${ZED_VERSION}/zed-x86_64-unknown-linux-musl.tar.gz" \
+            -o "$archive"
+          echo "${ZED_ARCHIVE_SHA256}  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Verify immutable tag
         shell: bash
         env:
-          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           git fetch --tags --force
           test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
-          gleam publish --yes
+
+      - name: Check whether Hex already has this version
+        id: hex
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          body="$RUNNER_TEMP/hex-package.json"
+          if curl --fail --silent --show-error --location https://hex.pm/api/packages/rx_gleam -o "$body"; then
+            if jq -e --arg version "$version" '.releases[]? | select(.version == $version)' "$body" >/dev/null; then
+              echo 'exists=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'exists=false' >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish rx_gleam to Hex
+        if: steps.hex.outputs.exists != 'true'
+        env:
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+        run: gleam publish --yes
+
+      - name: Configure optional Zed registry override
+        shell: bash
+        env:
+          ZED_REGISTRY_OVERRIDE: ${{ vars.ZED_PKG_REGISTRY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ZED_REGISTRY_OVERRIDE" ]; then
+            echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Authenticate to zpkg.net
+        env:
+          ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
+          ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
+        run: zed auth login --email "$ZED_PKG_AUTH_EMAIL"
+
+      - name: Publish oresoftware/rx-gleam
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          zed validate
+          zed publish
