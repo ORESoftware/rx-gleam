@@ -1,0 +1,273 @@
+name: release
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'gleam.toml'
+      - '.zpkg.toml'
+      - 'conformance/**'
+      - 'scripts/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release.yml'
+      - 'gleam.toml'
+      - '.zpkg.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ZED_VERSION: '0.3.0'
+  ZED_ARCHIVE_SHA256: 'e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7'
+
+jobs:
+  verify:
+    name: verify-release-artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '28'
+          gleam-version: '1.18.1'
+          rebar3-version: '3'
+
+      - name: Verify release version parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gleam_version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          zed_version="$(awk -F'"' '/^version = / { print $2; exit }' .zpkg.toml)"
+          test -n "$gleam_version"
+          test "$gleam_version" = "$zed_version"
+          printf 'release version: %s\n' "$gleam_version"
+
+      - name: Verify locked dependencies
+        run: |
+          set -euo pipefail
+          test -f manifest.toml
+          gleam deps download
+          git diff --exit-code -- manifest.toml
+
+      - name: Check and test Gleam package
+        run: |
+          set -euo pipefail
+          gleam format --check src test
+          gleam check
+          gleam test
+          gleam docs build
+          gleam export hex-tarball
+
+      - name: Install checksum-pinned Zed v0.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/zed-pkg/zed-cli/releases/download/v${ZED_VERSION}/zed-x86_64-unknown-linux-musl.tar.gz" \
+            -o "$archive"
+          echo "${ZED_ARCHIVE_SHA256}  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Validate and pack Zed package
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate
+          sh conformance/package-smoke.sh
+          zed pack
+          # zed r2g v0.3.0 cannot forward explicit install-hook consent.
+          # Tracked separately in zed-pkg/zed-cli#475; do not remove the
+          # package's intentional install hooks just to bypass that CLI bug.
+
+      - name: Preflight coordinated Zed and Hex release set
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          test -s "build/rx_gleam-${version}.tar"
+          mkdir -p .zed/native-release/hex
+          cp "build/rx_gleam-${version}.tar" ".zed/native-release/hex/rx_gleam-${version}.tar"
+          zed release plan --json | tee "$RUNNER_TEMP/release-plan.json"
+          grep -Eq '"registry"[[:space:]]*:[[:space:]]*"hex"' "$RUNNER_TEMP/release-plan.json"
+          grep -Eq '"package"[[:space:]]*:[[:space:]]*"rx_gleam"' "$RUNNER_TEMP/release-plan.json"
+          zed release preflight
+          zed release publish --dry-run
+
+      - name: Install checksum-pinned TLA+ tools v1.7.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/tla2tools.jar"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
+            -o "$jar"
+          echo "bee4a54f3ee3d4afc347c3240ec2d9e93b075104  $jar" | sha1sum --check
+          echo "TLA2TOOLS_JAR=$jar" >> "$GITHUB_ENV"
+
+      - name: Run full conformance gate
+        run: sh conformance/check.sh --full
+
+  prepare:
+    name: prepare-version-tag
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      release: ${{ steps.tag.outputs.release }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Require publisher credentials before tagging
+        shell: bash
+        env:
+          ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
+          ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_AUTH_EMAIL" || { echo '::error::ZED_PKG_AUTH_EMAIL is not configured'; exit 1; }
+          test -n "$ZED_PKG_AUTH_PASSWORD" || { echo '::error::ZED_PKG_AUTH_PASSWORD is not configured'; exit 1; }
+          test -n "$HEXPM_API_KEY" || { echo '::error::HEXPM_API_KEY is not configured'; exit 1; }
+
+      - name: Create or reuse the matching release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          gleam_version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          zed_version="$(awk -F'"' '/^version = / { print $2; exit }' .zpkg.toml)"
+          test -n "$gleam_version"
+          test "$gleam_version" = "$zed_version"
+          tag="v${gleam_version}"
+          git fetch --tags --force
+
+          if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            tagged_sha="$(git rev-list -n 1 "$tag")"
+            if [ "$tagged_sha" = "$GITHUB_SHA" ]; then
+              echo "Tag $tag already points at this commit; release may resume."
+              release=true
+            else
+              echo "Version $gleam_version is already tagged at $tagged_sha; refusing to retag $GITHUB_SHA."
+              exit 1
+            fi
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            echo "Created $tag at $GITHUB_SHA."
+            release=true
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: publish-hex-then-zed
+    if: needs.prepare.outputs.release == 'true'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '28'
+          gleam-version: '1.18.1'
+          rebar3-version: '3'
+
+      - name: Install checksum-pinned Zed v0.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/zed-pkg/zed-cli/releases/download/v${ZED_VERSION}/zed-x86_64-unknown-linux-musl.tar.gz" \
+            -o "$archive"
+          echo "${ZED_ARCHIVE_SHA256}  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Verify immutable tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+
+      - name: Check whether Hex already has this version
+        id: hex
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          body="$RUNNER_TEMP/hex-package.json"
+          if curl --fail --silent --show-error --location https://hex.pm/api/packages/rx_gleam -o "$body"; then
+            if jq -e --arg version "$version" '.releases[]? | select(.version == $version)' "$body" >/dev/null; then
+              echo 'exists=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'exists=false' >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish rx_gleam to Hex
+        if: steps.hex.outputs.exists != 'true'
+        env:
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+        run: gleam publish --yes
+
+      - name: Configure optional Zed registry override
+        shell: bash
+        env:
+          ZED_REGISTRY_OVERRIDE: ${{ vars.ZED_PKG_REGISTRY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ZED_REGISTRY_OVERRIDE" ]; then
+            echo "ZED_PKG_REGISTRY=$ZED_REGISTRY_OVERRIDE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Authenticate to zpkg.net
+        env:
+          ZED_PKG_AUTH_EMAIL: ${{ secrets.ZED_PKG_AUTH_EMAIL }}
+          ZED_PKG_AUTH_PASSWORD: ${{ secrets.ZED_PKG_AUTH_PASSWORD }}
+        run: zed auth login --email "$ZED_PKG_AUTH_EMAIL"
+
+      - name: Publish oresoftware/rx-gleam
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          zed validate
+          zed publish
