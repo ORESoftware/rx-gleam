@@ -245,9 +245,26 @@ jobs:
 
       - name: Publish rx_gleam to Hex
         if: steps.hex.outputs.exists != 'true'
+        shell: bash
         env:
           HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY || secrets.HEX_PUBLISH_KEY || secrets.ZED_HEX_API_KEY || secrets.HEX_API_KEY }}
-        run: gleam publish --yes
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'I am not using semantic versioning' | gleam publish --yes
+
+          version="$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)"
+          body="$RUNNER_TEMP/hex-package-after-publish.json"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl --fail --silent --show-error --location https://hex.pm/api/packages/rx_gleam -o "$body" \
+              && jq -e --arg version "$version" '.releases[]? | select(.version == $version)' "$body" >/dev/null; then
+              echo "Hex exposes rx_gleam@$version."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::Hex did not expose rx_gleam@$version after gleam publish"
+          exit 1
 
       - name: Configure optional Zed registry override
         shell: bash
