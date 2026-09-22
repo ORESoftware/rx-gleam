@@ -124,6 +124,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-24.04
+    environment: zed-pkg
     timeout-minutes: 5
     permissions:
       contents: write
@@ -186,6 +187,7 @@ jobs:
     if: needs.prepare.outputs.release == 'true'
     needs: prepare
     runs-on: ubuntu-24.04
+    environment: zed-pkg
     timeout-minutes: 15
     permissions:
       contents: write
