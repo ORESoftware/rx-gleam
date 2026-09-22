@@ -14,10 +14,6 @@ url = "https://github.com/ORESoftware/rx-gleam"
 dir = ".vendor/.zed"
 adapter = "none"
 
-[hooks]
-pre-install = ["sh ./scripts/zed-pre-install.sh"]
-post-install = ["sh ./scripts/zed-post-install.sh"]
-
 [publish]
 include_readme = true
 tag_format = "v{version}"
