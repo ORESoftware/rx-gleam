@@ -83,7 +83,7 @@ jobs:
           set -euo pipefail
           zed validate
           sh conformance/package-smoke.sh
-          zed r2g
+          zed r2g --allow-install-hooks
 
       - name: Install checksum-pinned TLA+ tools v1.7.4
         shell: bash
