@@ -1,0 +1,1 @@
+-record(active, {phase :: rx@protocol:phase(), teardown_ready :: boolean()}).

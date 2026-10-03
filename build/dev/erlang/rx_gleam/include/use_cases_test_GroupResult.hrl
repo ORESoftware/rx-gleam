@@ -1,0 +1,1 @@
+-record(group_result, {tenant :: binary(), sequence :: integer()}).

@@ -1,0 +1,1 @@
+-record(request, {id :: binary(), tenant :: binary(), sequence :: integer()}).

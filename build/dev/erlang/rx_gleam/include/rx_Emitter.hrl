@@ -1,0 +1,1 @@
+-record(emitter, {emit :: fun((rx@protocol:notification(any(), any())) -> nil)}).
